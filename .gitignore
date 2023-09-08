@@ -1,0 +1,6 @@
+**/*-debug
+CMakeLists.txt
+**/eva-vm
+
+**/.idea
+**/*.iml
