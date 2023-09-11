@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include "./Logger.h"
 #include "../bytecode/OpCode.h"
 
 #define READ_BYTE() *ip++
@@ -31,24 +32,27 @@ public:
     /**
      * Main eval loop.
      * */
-     void eval() {
-         for (;;) {
-            switch(READ_BYTE()) {
+    void eval() {
+        for (;;) {
+            int opcode = READ_BYTE();
+            switch (opcode) {
                 case OP_HALT:
                     return;
+                default:
+                    DIE << "Unknown opcode: " << std::hex << opcode;
             }
-         }
-     }
+        }
+    }
 
     /**
      * Instruction pointer.
      * */
-     uint8_t* ip;
+    uint8_t *ip;
 
     /**
      * Bytecode.
      * */
-     std::vector<uint8_t> code;
+    std::vector<uint8_t> code;
 };
 
 #endif
