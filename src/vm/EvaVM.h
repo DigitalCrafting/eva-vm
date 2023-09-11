@@ -69,12 +69,17 @@ public:
     EvaValue exec(const std::string &program) {
         // 1. Parse the program
         // 2. Compile to Eva bytecode
+//        Numbers and math example
+//        constants.push_back(NUMBER(3));
+//        constants.push_back(NUMBER(2));
+//        constants.push_back(NUMBER(5));
+//
+//        code = {OP_CONST, 0, OP_CONST, 1, OP_ADD, OP_CONST, 2, OP_MUL, OP_HALT};
 
-        constants.push_back(NUMBER(3));
-        constants.push_back(NUMBER(2));
-        constants.push_back(NUMBER(5));
+        constants.push_back(ALLOC_STRING("Hello, "));
+        constants.push_back(ALLOC_STRING("world!"));
 
-        code = {OP_CONST, 0, OP_CONST, 1, OP_ADD, OP_CONST, 2, OP_MUL, OP_HALT};
+        code = {OP_CONST, 0, OP_CONST, 1, OP_ADD, OP_HALT};
 
         // Set instruction pointer to beginning
         ip = &code[0];
@@ -98,7 +103,17 @@ public:
                     break;
                 }
                 case OP_ADD: {
-                    BINARY_OP(+);
+                    auto op2 = pop();
+                    auto op1 = pop();
+                    if (IS_NUMBER(op1) && IS_NUMBER(op2)) {
+                        auto v1 = AS_NUMBER(op1);
+                        auto v2 = AS_NUMBER(op2);
+                        push(NUMBER(v1 + v2));
+                    } else if (IS_STRING(op1) && IS_STRING(op2)) {
+                        auto v1 = AS_CPPSTRING(op1);
+                        auto v2 = AS_CPPSTRING(op2);
+                        push(ALLOC_STRING(v1 + v2));
+                    }
                     break;
                 }
                 case OP_SUB: {
