@@ -7,6 +7,27 @@
 #include "../vm/Logger.h"
 #include "../bytecode/OpCode.h"
 
+#define ALLOC_CONST(tester, converter, allocator, value)    \
+    do {                                                    \
+        for (auto i = 0; i < co->constants.size(); i++) {   \
+            if (!tester(co->constants[i])) {                \
+            continue;                                       \
+            }                                               \
+            if (converter(co->constants[i]) == value) {     \
+                return i;                                   \
+            }                                               \
+        }                                                   \
+        co->constants.push_back(allocator(value));          \
+    } while (false)
+
+
+// Generic binary operation: (+ 1 2) OP_CONST, OP_CONST, OP_ADD
+#define GEN_BINARY_OP(op) do { \
+    gen(exp.list[1]);          \
+    gen(exp.list[2]);          \
+    emit(op);                  \
+} while (false)
+
 class EvaCompiler {
 public:
     CodeObject *compile(const Exp &exp) {
@@ -40,7 +61,24 @@ public:
                 break;
             }
             case ExpType::LIST: {
-                DIE << "ExpType::LIST: unimplemented.";
+                auto tag = exp.list[0];
+
+                /**
+                 * Special cases.
+                 * */
+                if (tag.type == ExpType::SYMBOL) {
+                    auto op = tag.string;
+
+                    if (op == "+") {
+                        GEN_BINARY_OP(OP_ADD);
+                    } else if (op == "-") {
+                        GEN_BINARY_OP(OP_SUB);
+                    } else if (op == "*") {
+                        GEN_BINARY_OP(OP_MUL);
+                    } else if (op == "/") {
+                        GEN_BINARY_OP(OP_DIV);
+                    }
+                }
                 break;
             }
         }
@@ -50,36 +88,18 @@ private:
     /**
      * Allocates a numeric constant.
      * */
-     size_t numericConstIdx(double value) {
-        for (auto i = 0; i < co->constants.size(); i++) {
-            if (!IS_NUMBER(co->constants[i])) {
-                continue;
-            }
-
-            if (AS_NUMBER(co->constants[i]) == value) {
-                return i;
-            }
-        }
-        co->constants.push_back(NUMBER(value));
+    size_t numericConstIdx(double value) {
+        ALLOC_CONST(IS_NUMBER, AS_NUMBER, NUMBER, value);
         return co->constants.size() - 1;
-     }
+    }
 
     /**
      * Allocates a string constant.
      * */
-     size_t stringConstIdx(const std::string& value) {
-        for (auto i = 0; i < co->constants.size(); i++) {
-            if (!IS_STRING(co->constants[i])) {
-                continue;
-            }
-
-            if (AS_CPPSTRING(co->constants[i]) == value) {
-                return i;
-            }
-        }
-        co->constants.push_back(ALLOC_STRING(value));
+    size_t stringConstIdx(const std::string &value) {
+        ALLOC_CONST(IS_STRING, AS_CPPSTRING, ALLOC_STRING, value);
         return co->constants.size() - 1;
-     }
+    }
 
     /**
      * Emits data to the bytecode.
