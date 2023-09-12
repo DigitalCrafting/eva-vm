@@ -7,6 +7,7 @@
 #include "./Logger.h"
 #include "./EvaValue.h"
 #include "../parser/EvaParser.h"
+#include "../compiler/EvaCompiler.h"
 #include "../bytecode/OpCode.h"
 
 using syntax::EvaParser;
@@ -20,7 +21,7 @@ using syntax::EvaParser;
 /**
  * Gets a constant from the pool.
  * */
-#define GET_CONST() constants[READ_BYTE()]
+#define GET_CONST() co->constants[READ_BYTE()]
 
 /**
  * Stack top (StackOverflow after exceeding).
@@ -42,7 +43,9 @@ using syntax::EvaParser;
  * */
 class EvaVM {
 public:
-    EvaVM() : parser(std::make_unique<EvaParser>()) {}
+    EvaVM() :
+        parser(std::make_unique<EvaParser>()),
+        compiler(std::make_unique<EvaCompiler>()) {}
 
     /**
      * Push value onto the stack.
@@ -74,20 +77,10 @@ public:
         auto ast = parser->parse(program);
 
         // 2. Compile to Eva bytecode
-//        Numbers and math example
-//        constants.push_back(NUMBER(3));
-//        constants.push_back(NUMBER(2));
-//        constants.push_back(NUMBER(5));
-//
-//        code = {OP_CONST, 0, OP_CONST, 1, OP_ADD, OP_CONST, 2, OP_MUL, OP_HALT};
-
-        constants.push_back(ALLOC_STRING("Hello, "));
-        constants.push_back(ALLOC_STRING("world!"));
-
-        code = {OP_CONST, 0, OP_CONST, 1, OP_ADD, OP_HALT};
+        co = compiler->compile(ast);
 
         // Set instruction pointer to beginning
-        ip = &code[0];
+        ip = &co->code[0];
         // Init the stack
         sp = &stack[0];
 
@@ -145,6 +138,11 @@ public:
      std::unique_ptr<EvaParser> parser;
 
     /**
+     * Compiler
+     * */
+     std::unique_ptr<EvaCompiler> compiler;
+
+    /**
      * Instruction pointer.
      * */
     uint8_t *ip;
@@ -160,14 +158,9 @@ public:
     std::array<EvaValue, STACK_LIMIT> stack;
 
     /**
-     * Constant pool.
+     * Code object.
      * */
-    std::vector<EvaValue> constants;
-
-    /**
-     * Bytecode.
-     * */
-    std::vector<uint8_t> code;
+    CodeObject *co;
 };
 
 #endif
