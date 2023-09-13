@@ -39,13 +39,30 @@ using syntax::EvaParser;
     } while (false)
 
 /**
+ * Generic value comparison.
+ * */
+#define COMPARE_VALUES(op, v1, v2) \
+    do {                           \
+        bool res;                  \
+        switch (op) {             \
+            case 0: {res = v1 < v2; break; }                           \
+            case 1: {res = v1 > v2; break; }                           \
+            case 2: {res = v1 == v2; break; }                           \
+            case 3: {res = v1 >= v2; break; }                           \
+            case 4: {res = v1 <= v2; break; }                           \
+            case 5: {res = v1 != v2; break; }                           \
+        }                          \
+        push(BOOLEAN(res));\
+    } while (false);
+
+/**
  * Eva Virtual Machine
  * */
 class EvaVM {
 public:
     EvaVM() :
-        parser(std::make_unique<EvaParser>()),
-        compiler(std::make_unique<EvaCompiler>()) {}
+            parser(std::make_unique<EvaParser>()),
+            compiler(std::make_unique<EvaCompiler>()) {}
 
     /**
      * Push value onto the stack.
@@ -126,6 +143,23 @@ public:
                     BINARY_OP(/);
                     break;
                 }
+                case OP_COMPARE: {
+                    auto op = READ_BYTE();
+                    auto op2 = pop();
+                    auto op1 = pop();
+
+                    if (IS_NUMBER(op1) && IS_NUMBER(op2)) {
+                        auto v1 = AS_NUMBER(op1);
+                        auto v2 = AS_NUMBER(op2);
+                        COMPARE_VALUES(op, v1, v2);
+                    } else if (IS_STRING(op1) && IS_STRING(op2)) {
+                        auto v1 = AS_CPPSTRING(op1);
+                        auto v2 = AS_CPPSTRING(op2);
+                        COMPARE_VALUES(op, v1, v2);
+                    }
+
+                    break;
+                }
                 default:
                     DIE << "Unknown opcode: " << std::hex << opcode;
             }
@@ -135,12 +169,12 @@ public:
     /**
      * Parser
      * */
-     std::unique_ptr<EvaParser> parser;
+    std::unique_ptr<EvaParser> parser;
 
     /**
      * Compiler
      * */
-     std::unique_ptr<EvaCompiler> compiler;
+    std::unique_ptr<EvaCompiler> compiler;
 
     /**
      * Instruction pointer.
