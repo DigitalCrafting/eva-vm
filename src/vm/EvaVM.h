@@ -19,9 +19,19 @@ using syntax::EvaParser;
 #define READ_BYTE() *ip++
 
 /**
+ * Reads a short word (2 bytes)
+ * */
+#define READ_SHORT() (ip += 2, (uint16_t)((ip[-2] << 8) | ip[-1]))
+
+/**
+ * Converts bytecode index to pointer
+ * */
+#define TO_ADDRESS(index) (&co->code[index])
+
+/**
  * Gets a constant from the pool.
  * */
-#define GET_CONST() co->constants[READ_BYTE()]
+#define GET_CONST() (co->constants[READ_BYTE()])
 
 /**
  * Stack top (StackOverflow after exceeding).
@@ -158,6 +168,19 @@ public:
                         COMPARE_VALUES(op, v1, v2);
                     }
 
+                    break;
+                }
+                case OP_JMP_IF_FALSE: {
+                    auto cond = AS_BOOLEAN(pop());
+                    auto address = READ_SHORT();
+                    if (!cond) {
+                        ip = TO_ADDRESS(address);
+                    }
+                    break;
+                }
+                case OP_JMP: {
+                    auto address = READ_SHORT();
+                    ip = TO_ADDRESS(address);
                     break;
                 }
                 default:
