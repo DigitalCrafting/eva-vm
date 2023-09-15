@@ -111,6 +111,8 @@ public:
         // Init the stack
         sp = &stack[0];
 
+        compiler->disassembleBytecode();
+
         return eval();
     }
 

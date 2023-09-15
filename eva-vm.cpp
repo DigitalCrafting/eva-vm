@@ -10,7 +10,7 @@ int main(int argc, const char *argv[]) {
     EvaVM vm;
 
     auto result = vm.exec(R"(
-        (if (> 5 3) 1 2)
+        (if (> 5 10) 1 2)
     )");
 
     log(result);

@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <string>
+#include "../disassembler/EvaDisassembler.h"
 #include "../parser/EvaParser.h"
 #include "../vm/EvaValue.h"
 #include "../vm/Logger.h"
@@ -32,6 +33,8 @@
 
 class EvaCompiler {
 public:
+    EvaCompiler() : disassembler(std::make_unique<EvaDisassembler>()) {}
+
     CodeObject *compile(const Exp &exp) {
         // Allocate new code object:
         co = AS_CODE(ALLOC_CODE("main"));
@@ -136,7 +139,19 @@ public:
         }
     }
 
+    /**
+     * Disassemble all compilation units.
+     * */
+     void disassembleBytecode() {
+         disassembler->disassemble(co);
+     }
+
 private:
+    /**
+     * Disassembler.
+     * */
+     std::unique_ptr<EvaDisassembler> disassembler;
+
     /**
      * Returns current bytecode offset.
      * */
