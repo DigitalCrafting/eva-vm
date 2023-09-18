@@ -8,6 +8,7 @@
 #include "../parser/EvaParser.h"
 #include "../vm/EvaValue.h"
 #include "../vm/Logger.h"
+#include "../vm/Global.h"
 #include "../bytecode/OpCode.h"
 
 #define ALLOC_CONST(tester, converter, allocator, value)    \
@@ -21,19 +22,23 @@
             }                                               \
         }                                                   \
         co->constants.push_back(allocator(value));          \
-    } while (false)
+    } while (false);
 
 
 // Generic binary operation: (+ 1 2) OP_CONST, OP_CONST, OP_ADD
-#define GEN_BINARY_OP(op) do { \
-    gen(exp.list[1]);          \
-    gen(exp.list[2]);          \
-    emit(op);                  \
-} while (false)
+#define GEN_BINARY_OP(op) \
+    do { \
+        gen(exp.list[1]);          \
+        gen(exp.list[2]);          \
+        emit(op);                  \
+    } while (false);
 
 class EvaCompiler {
 public:
-    EvaCompiler() : disassembler(std::make_unique<EvaDisassembler>()) {}
+    explicit EvaCompiler(std::shared_ptr<Global> globals) :
+        globals(globals),
+        disassembler(std::make_unique<EvaDisassembler>(globals)) {
+    }
 
     CodeObject *compile(const Exp &exp) {
         // Allocate new code object:
@@ -68,7 +73,13 @@ public:
                     emit(booleanConstIdx(exp.string == "true"));
                 } else {
                     /* Variable */
-                    // TODO
+                    // 1. Global variables
+                    if (!globals->exists(exp.string)) {
+                        DIE << "[EvaCompiler]: Reference error: " << exp.string << " doesn't exist.";
+                    }
+
+                    emit(OP_GET_GLOBAL);
+                    emit(globals->getGlobalIndex(exp.string));
                 }
                 break;
             }
@@ -133,6 +144,32 @@ public:
                         auto endBranchAddr = getOffset();
                         patchJumpAddress(endAddress, endBranchAddr);
                     }
+                    /* Variable declaration */
+                    else if (op == "var") {
+                        // 1. Global vars
+                        auto varName = exp.list[1].string;
+                        globals->define(varName);
+                        // Initializer:
+                        gen(exp.list[2]);
+                        emit(OP_SET_GLOBAL);
+                        emit(globals->getGlobalIndex(varName));
+                        // 2. Local vars
+                    }
+                    else if (op == "set") {
+                        // 1. Global vars
+                        auto varName = exp.list[1].string;
+                        gen(exp.list[2]);
+
+                        auto globalIndex = globals->getGlobalIndex(varName);
+
+                        if (globalIndex == -1) {
+                            DIE << "Reference error: " << varName << " is not defined.";
+                        }
+                        // Initializer:
+                        emit(OP_SET_GLOBAL);
+                        emit(globalIndex);
+                        // 2. Local vars
+                    }
                 }
                 break;
             }
@@ -142,15 +179,20 @@ public:
     /**
      * Disassemble all compilation units.
      * */
-     void disassembleBytecode() {
-         disassembler->disassemble(co);
-     }
+    void disassembleBytecode() {
+        disassembler->disassemble(co);
+    }
 
 private:
     /**
+     * Global object.
+     * */
+    std::shared_ptr<Global> globals;
+
+    /**
      * Disassembler.
      * */
-     std::unique_ptr<EvaDisassembler> disassembler;
+    std::unique_ptr<EvaDisassembler> disassembler;
 
     /**
      * Returns current bytecode offset.
@@ -191,19 +233,19 @@ private:
     /**
      * Writes byte at offset.
      * */
-     void writeByteAtOffset(size_t offset, uint8_t value) {
-         co->code[offset] = value;
-     }
+    void writeByteAtOffset(size_t offset, uint8_t value) {
+        co->code[offset] = value;
+    }
 
     /**
      * Patches jump address.
      * */
-     void patchJumpAddress(size_t offset, uint16_t value) {
+    void patchJumpAddress(size_t offset, uint16_t value) {
         writeByteAtOffset(offset, (value >> 8) & 0xff);
         writeByteAtOffset(offset + 1, value & 0xff);
-     }
+    }
 
-    CodeObject *co;
+    CodeObject *co{};
 
     /**
      * Compare ops map.

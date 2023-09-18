@@ -6,8 +6,9 @@
 #include <array>
 #include "./Logger.h"
 #include "./EvaValue.h"
-#include "../parser/EvaParser.h"
+#include "./Global.h"
 #include "../compiler/EvaCompiler.h"
+#include "../parser/EvaParser.h"
 #include "../bytecode/OpCode.h"
 
 using syntax::EvaParser;
@@ -71,8 +72,11 @@ using syntax::EvaParser;
 class EvaVM {
 public:
     EvaVM() :
+            globals(std::make_shared<Global>()),
             parser(std::make_unique<EvaParser>()),
-            compiler(std::make_unique<EvaCompiler>()) {}
+            compiler(std::make_unique<EvaCompiler>(globals)) {
+        setGlobalVariables();
+    }
 
     /**
      * Push value onto the stack.
@@ -90,10 +94,20 @@ public:
      * */
     EvaValue pop() {
         if (sp == stack.begin()) {
-            DIE << "pop(): Empty stack.\n";
+            DIE << "pop(): empty stack.\n";
         }
         --sp;
         return *sp;
+    }
+
+    /**
+     * Peek an element from the stack.
+     * */
+    EvaValue peek(size_t offset = 0) {
+        if (stack.size() == 0) {
+            DIE << "peek(): empty stack.\n";
+        }
+        return *(sp - 1 - offset);
     }
 
     /**
@@ -185,11 +199,35 @@ public:
                     ip = TO_ADDRESS(address);
                     break;
                 }
+                case OP_GET_GLOBAL: {
+                    auto globalIndex = (int) READ_BYTE();
+                    push(globals->get(globalIndex).value);
+                    break;
+                }
+                case OP_SET_GLOBAL: {
+                    auto globalIndex = (int) READ_BYTE();
+                    auto value = peek(0);
+                    globals->set(globalIndex, value);
+                    break;
+                }
                 default:
                     DIE << "Unknown opcode: " << std::hex << opcode;
             }
         }
     }
+
+    /**
+     * Sets up global variables and functions.
+     * */
+    void setGlobalVariables() {
+        globals->addConst("x", 10);
+        globals->addConst("y", 20);
+    }
+
+    /**
+     * Global object
+     * */
+    std::shared_ptr<Global> globals;
 
     /**
      * Parser

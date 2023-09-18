@@ -1,18 +1,21 @@
 #ifndef EVA_VM_EVADISASSEMBLER_H
 #define EVA_VM_EVADISASSEMBLER_H
 
-#include "iomanip"
-#include "iostream"
-#include "array"
-#include "string"
+#include <memory>
+#include <iomanip>
+#include <iostream>
+#include <array>
+#include <string>
+#include "../vm/Global.h"
 #include "../bytecode/OpCode.h"
-#include "../compiler/EvaCompiler.h"
 
 /**
  * Eva disassembler.
  * */
 class EvaDisassembler {
 public:
+    EvaDisassembler(std::shared_ptr<Global> globals) : globals(globals) {};
+
     void disassemble(CodeObject *co) {
         std::cout << "\n--------------- Disassembly: " << co->name << "---------------\n\n";
         size_t offset = 0;
@@ -23,6 +26,8 @@ public:
     }
 
 private:
+    std::shared_ptr<Global> globals;
+
     size_t disassembleInstruction(CodeObject *co, size_t offset) {
         std::ios_base::fmtflags f(std::cout.flags());
 
@@ -47,6 +52,10 @@ private:
             case OP_JMP_IF_FALSE:
             case OP_JMP: {
                 return disassembleJump(co, opcode, offset);
+            }
+            case OP_GET_GLOBAL:
+            case OP_SET_GLOBAL: {
+                return disassembleGlobal(co, opcode, offset);
             }
             default: {
                 DIE << "disassemblyInstruction: no disassembly for " << opcodeToString(opcode);
@@ -75,6 +84,17 @@ private:
         printOpCode(opcode);
         auto constIndex = co->code[offset + 1];
         std::cout << (int) constIndex << " (" << evaValueToConstantString(co->constants[constIndex]) << ")";
+        return offset + 2;
+    }
+
+    /**
+     * Disassemble global variable instruction.
+     * */
+    size_t disassembleGlobal(CodeObject *co, uint8_t opcode, size_t offset) {
+        dumpBytes(co, offset, 2);
+        printOpCode(opcode);
+        auto globalIndex = co->code[offset + 1];
+        std::cout << (int) globalIndex << " (" << globals->get(globalIndex).name << ")";
         return offset + 2;
     }
 
@@ -144,6 +164,5 @@ private:
 std::array<std::string, 6> EvaDisassembler::inverseCompareOps_ = {
         "<", ">", "==", ">=", "<=", "!="
 };
-
 
 #endif
