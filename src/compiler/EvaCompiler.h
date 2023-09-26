@@ -262,7 +262,7 @@ private:
      * Whether it's the global scope.
      * */
     bool isGlobalScope() {
-        return co->scopeLevel == 0;
+        return co->name == "main" && co->scopeLevel == 1; // We have implicit block 0, so global scope will be 1
     }
 
     /**
