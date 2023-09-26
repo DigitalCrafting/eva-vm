@@ -57,7 +57,7 @@ struct Global {
     }
 
     /**
-     * Get local index.
+     * Get global index.
      * */
     int getGlobalIndex(const std::string &name) {
         if (!globals.empty()) {

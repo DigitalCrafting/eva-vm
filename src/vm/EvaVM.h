@@ -115,7 +115,7 @@ public:
      * */
     EvaValue exec(const std::string &program) {
         // 1. Parse the program
-        auto ast = parser->parse(program);
+        auto ast = parser->parse("(begin " + program + ")");
 
         // 2. Compile to Eva bytecode
         co = compiler->compile(ast);
@@ -124,6 +124,8 @@ public:
         ip = &co->code[0];
         // Init the stack
         sp = &stack[0];
+        // Init the base (frame) pointer
+        bp = sp;
 
         compiler->disassembleBytecode();
 
@@ -210,6 +212,45 @@ public:
                     globals->set(globalIndex, value);
                     break;
                 }
+                // Stack manipulation
+                case OP_POP: {
+                    pop();
+                    break;
+                }
+                case OP_GET_LOCAL: {
+                    auto localIndex = READ_BYTE();
+                    if (localIndex < 0 || localIndex >= stack.size()) {
+                        DIE << "OP_GET_LOCAL: invalid variable index: " << (int) localIndex;
+                    }
+                    push(bp[localIndex]);
+                    break;
+                }
+                case OP_SET_LOCAL: {
+                    auto localIndex = READ_BYTE();
+                    auto value = peek(0);
+                    if (localIndex < 0 || localIndex >= stack.size()) {
+                        DIE << "OP_SET_LOCAL: invalid variable index: " << (int) localIndex;
+                    }
+                    bp[localIndex] = value;
+                    break;
+                }
+                /**
+                 * Clean up variables:
+                 *
+                 * Note: variables sit right below the result of a block,
+                 * so we move the result below, which will be new top
+                 * after popping the variables.
+                 * */
+                case OP_SCOPE_EXIT: {
+                    auto count = READ_BYTE();
+
+                    // Move the result above (or below, depends on the visualization) the vars
+                    *(sp - 1 - count) = peek(0);
+
+                    popN(count);
+
+                    break;
+                }
                 default:
                     DIE << "Unknown opcode: " << std::hex << opcode;
             }
@@ -220,8 +261,15 @@ public:
      * Sets up global variables and functions.
      * */
     void setGlobalVariables() {
-        globals->addConst("x", 10);
+        globals->addConst("VERSION", 1);
         globals->addConst("y", 20);
+    }
+
+    void popN(size_t count) {
+        if (stack.size() == 0) {
+            DIE << "popN(): empty stack.\n";
+        }
+        sp -= count;
     }
 
     /**
@@ -248,6 +296,11 @@ public:
      * Stack pointer.
      * */
     EvaValue *sp;
+
+    /**
+     * Base pointer (aka Frame pointer).
+     * */
+    EvaValue *bp;
 
     /**
      * Operands stack.

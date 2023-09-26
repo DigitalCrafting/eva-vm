@@ -49,6 +49,11 @@ struct StringObject : public Object {
     std::string string;
 };
 
+struct LocalVar {
+    std::string name;
+    size_t scopeLevel;
+};
+
 /**
  * Code object.
  * */
@@ -69,6 +74,37 @@ struct CodeObject : public Object {
      * Bytecode.
      * */
     std::vector<uint8_t> code;
+
+    /**
+     * Current scope level.
+     * */
+    size_t scopeLevel = 0;
+
+    /**
+     * Local variables and functions.
+     * */
+    std::vector<LocalVar> locals;
+
+    /**
+     *
+     * */
+     void addLocal(const std::string& name) {
+         locals.push_back({name, scopeLevel});
+     }
+
+    /**
+    * Get local index.
+    * */
+    int getLocalIndex(const std::string &name) {
+        if (!locals.empty()) {
+            for (auto i = (int) locals.size() - 1; i >= 0; i--) {
+                if (locals[i].name == name) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
 };
 
 /* ------------------------------------- */
@@ -107,7 +143,7 @@ struct CodeObject : public Object {
 /**
  * String representation used in constants for debug.
  * */
-std::string evaValueToTypeString(const EvaValue& evaValue) {
+std::string evaValueToTypeString(const EvaValue &evaValue) {
     if (IS_NUMBER(evaValue)) {
         return "NUMBER";
     } else if (IS_BOOLEAN(evaValue)) {
@@ -117,7 +153,7 @@ std::string evaValueToTypeString(const EvaValue& evaValue) {
     } else if (IS_CODE(evaValue)) {
         return "CODE";
     } else {
-        DIE << "evaValueToTypeString: unknown type " << (int)evaValue.type;
+        DIE << "evaValueToTypeString: unknown type " << (int) evaValue.type;
     }
     return ""; // Unreachable
 }
@@ -137,7 +173,7 @@ std::string evaValueToConstantString(const EvaValue &evaValue) {
         auto code = AS_CODE(evaValue);
         ss << "code " << code << ": " << code->name;
     } else {
-        DIE << "evaValueToConstantString: unknown type " << (int)evaValue.type;
+        DIE << "evaValueToConstantString: unknown type " << (int) evaValue.type;
     }
     return ss.str();
 }
@@ -145,7 +181,7 @@ std::string evaValueToConstantString(const EvaValue &evaValue) {
 /**
  * Output stream.
  * */
-std::ostream &operator<<(std::ostream& os, const EvaValue& evaValue) {
+std::ostream &operator<<(std::ostream &os, const EvaValue &evaValue) {
     return os << "EvaValue (" << evaValueToTypeString(evaValue)
               << "): " << evaValueToConstantString(evaValue) << std::endl;
 }

@@ -40,8 +40,12 @@ private:
             case OP_ADD:
             case OP_SUB:
             case OP_MUL:
-            case OP_DIV: {
+            case OP_DIV:
+            case OP_POP: {
                 return disassembleSimple(co, opcode, offset);
+            }
+            case OP_SCOPE_EXIT: {
+                return disassembleWord(co, opcode, offset);
             }
             case OP_CONST: {
                 return disassembleConst(co, opcode, offset);
@@ -56,6 +60,10 @@ private:
             case OP_GET_GLOBAL:
             case OP_SET_GLOBAL: {
                 return disassembleGlobal(co, opcode, offset);
+            }
+            case OP_SET_LOCAL:
+            case OP_GET_LOCAL: {
+                return disassembleLocal(co, opcode, offset);
             }
             default: {
                 DIE << "disassemblyInstruction: no disassembly for " << opcodeToString(opcode);
@@ -77,6 +85,16 @@ private:
     }
 
     /**
+     * Disassemble word.
+     * */
+    size_t disassembleWord(CodeObject *co, uint8_t opcode, size_t offset) {
+        dumpBytes(co, offset, 2);
+        printOpCode(opcode);
+        std::cout << (int)co->code[offset + 1];
+        return offset + 2;
+    }
+
+    /**
      * Disassemble const instruction.
      * */
     size_t disassembleConst(CodeObject *co, uint8_t opcode, size_t offset) {
@@ -95,6 +113,17 @@ private:
         printOpCode(opcode);
         auto globalIndex = co->code[offset + 1];
         std::cout << (int) globalIndex << " (" << globals->get(globalIndex).name << ")";
+        return offset + 2;
+    }
+
+    /**
+     * Disassemble local variable instruction.
+     * */
+    size_t disassembleLocal(CodeObject *co, uint8_t opcode, size_t offset) {
+        dumpBytes(co, offset, 2);
+        printOpCode(opcode);
+        auto localIndex = co->code[offset + 1];
+        std::cout << (int) localIndex << " (" << co->locals[localIndex].name << ")";
         return offset + 2;
     }
 
