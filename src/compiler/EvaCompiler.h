@@ -153,6 +153,31 @@ public:
                         auto endBranchAddr = getOffset();
                         patchJumpAddress(endAddress, endBranchAddr);
                     }
+                        /* While expression */
+                    else if (op == "while") {
+                        auto loopStartAddress = getOffset();
+                        // Emit test
+                        gen(exp.list[1]);
+                        emit(OP_JMP_IF_FALSE);
+
+                        emit(0);
+                        emit(0);
+
+                        auto loopEndJmpAddress = getOffset() - 2;
+                        // Emit body
+                        gen(exp.list[2]);
+
+                        emit(OP_JMP);
+
+                        emit(0);
+                        emit(0);
+
+                        patchJumpAddress(getOffset() - 2, loopStartAddress);
+
+                        // Patch the end
+                        auto loopEndAddr = getOffset() + 1;
+                        patchJumpAddress(loopEndJmpAddress, loopEndAddr);
+                    }
                         /* Variable declaration */
                     else if (op == "var") {
                         auto varName = exp.list[1].string;

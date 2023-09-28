@@ -10,14 +10,15 @@ int main(int argc, const char *argv[]) {
     EvaVM vm;
 
     auto result = vm.exec(R"(
-        (var x 5)
-        (set x (+ x 10))
-        x
-        (begin
-            (var x 100)
-            x
+        (var i 10)
+        (var count 0)
+
+        (while (> i 0) (begin
+            (set i (- i 1))
+            (set count (+ count 1))
         )
-        x
+        )
+        count
     )");
 
     log(result);
