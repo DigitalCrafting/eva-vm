@@ -153,7 +153,7 @@ public:
                         auto endBranchAddr = getOffset();
                         patchJumpAddress(endAddress, endBranchAddr);
                     }
-                        /* While expression */
+                        /* While loop */
                     else if (op == "while") {
                         auto loopStartAddress = getOffset();
                         // Emit test
@@ -177,6 +177,20 @@ public:
                         // Patch the end
                         auto loopEndAddr = getOffset() + 1;
                         patchJumpAddress(loopEndJmpAddress, loopEndAddr);
+                    }
+                        /* For loop */
+                    else if (op == "for") {
+
+                        // Initialize variable
+                        gen(exp.list[1]);
+
+                        std::string whileSymbolLiteral = "while";
+                        Exp whileSymbolObj(whileSymbolLiteral);
+
+                        Exp whileBody(exp.list[4]);
+                        whileBody.list.push_back(exp.list[3]);
+
+                        gen(Exp({whileSymbolObj, exp.list[2], whileBody}));
                     }
                         /* Variable declaration */
                     else if (op == "var") {
