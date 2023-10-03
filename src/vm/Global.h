@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
 #include "./EvaValue.h"
 #include "./Logger.h"
@@ -49,6 +50,20 @@ struct Global {
         globals.push_back({name, NUMBER(0)});
     }
 
+    /**
+     * Adds a native function.
+     * */
+    void addNativeFunction(const std::string& name, std::function<void()> fn, size_t arity) {
+        if (exists(name)) {
+            return;
+        }
+
+        globals.push_back({name, ALLOC_NATIVE(fn, name, arity)});
+    }
+
+    /**
+     * Adds a global constant.
+     * */
     void addConst(const std::string &name, double value) {
         if (exists(name)) {
             return;

@@ -137,6 +137,7 @@ public:
      * */
     EvaValue eval() {
         for (;;) {
+//            dumpStack();
             int opcode = READ_BYTE();
             switch (opcode) {
                 case OP_HALT:
@@ -212,7 +213,7 @@ public:
                     globals->set(globalIndex, value);
                     break;
                 }
-                // Stack manipulation
+                    // Stack manipulation
                 case OP_POP: {
                     pop();
                     break;
@@ -234,13 +235,13 @@ public:
                     bp[localIndex] = value;
                     break;
                 }
-                /**
-                 * Clean up variables:
-                 *
-                 * Note: variables sit right below the result of a block,
-                 * so we move the result below, which will be new top
-                 * after popping the variables.
-                 * */
+                    /**
+                     * Clean up variables:
+                     *
+                     * Note: variables sit right below the result of a block,
+                     * so we move the result below, which will be new top
+                     * after popping the variables.
+                     * */
                 case OP_SCOPE_EXIT: {
                     auto count = READ_BYTE();
 
@@ -250,6 +251,24 @@ public:
                     popN(count);
 
                     break;
+                }
+                    /**
+                     * Function calls
+                     * */
+                case OP_CALL: {
+                    auto argsCount = READ_BYTE();
+                    auto fnValue = peek(argsCount);
+
+                    // 1. Native function
+                    if (IS_NATIVE(fnValue)) {
+                        AS_NATIVE(fnValue)->function();
+                        auto result = pop();
+                        popN(argsCount + 1);
+                        push(result);
+                        break;
+                    }
+
+                    // 2. User-defined function (TODO)
                 }
                 default:
                     DIE << "Unknown opcode: " << std::hex << opcode;
@@ -261,6 +280,28 @@ public:
      * Sets up global variables and functions.
      * */
     void setGlobalVariables() {
+        /* Native functions */
+        globals->addNativeFunction(
+                "square",
+                [&]() {
+                    auto x = AS_NUMBER(peek(0));
+                    push(NUMBER(x * x));
+                },
+                1
+        );
+
+        globals->addNativeFunction(
+                "sum",
+                [&]() {
+                    // Remember: first we take out second arg, because of stack structure
+                    auto v2 = AS_NUMBER(peek(0));
+                    auto v1 = AS_NUMBER(peek(1));
+                    push(NUMBER(v1 + v2));
+                },
+                2
+        );
+
+        /* Global variables */
         globals->addConst("VERSION", 1);
         globals->addConst("y", 20);
     }
@@ -311,6 +352,22 @@ public:
      * Code object.
      * */
     CodeObject *co;
+
+    /**
+     * Dumps the current stack
+     * */
+    void dumpStack() {
+        std::cout << "\n---------- Stack ----------\n";
+         if (sp == stack.begin()) {
+             std::cout << "(empty)";
+         }
+
+         auto csp = sp - 1;
+         while (csp >= stack.begin()) {
+             std::cout << *csp-- << "\n";
+         }
+         std::cout << "\n";
+    }
 };
 
 #endif
