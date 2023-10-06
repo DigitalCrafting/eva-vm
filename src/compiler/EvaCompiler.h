@@ -21,7 +21,7 @@
                 return i;                                   \
             }                                               \
         }                                                   \
-        co->constants.push_back(allocator(value));          \
+        co->addConstant(allocator(value));          \
     } while (false);
 
 
@@ -42,7 +42,7 @@ public:
 
     CodeObject *compile(const Exp &exp) {
         // Allocate new code object:
-        co = AS_CODE(ALLOC_CODE("main"));
+        co = AS_CODE(createCodeObjectValue("main"));
         // Generate recursively from top-level:
         gen(exp);
         // Explicit VM-stop marker.
@@ -249,6 +249,64 @@ public:
                         }
 
                         scopeExit();
+                    } else if (op == "def") {
+                        auto fnName = exp.list[1].string;
+                        auto params = exp.list[2].list;
+                        auto arity = params.size();
+                        auto body = exp.list[3];
+
+                        // Save previous code object
+                        auto prevCo = co;
+
+                        // Function code object
+                        auto coValue = createCodeObjectValue(fnName, arity);
+                        co = AS_CODE(coValue);
+
+                        // Store new co as constant
+                        prevCo->addConstant(coValue);
+
+                        // Function name is registered as local,
+                        // so the function can call itself recursively
+                        co->addLocal(fnName);
+
+                        // Parameters are added as variables
+                        for (auto i = 0; i < arity; i++) {
+                            auto &argName = params[i].string;
+                            co->addLocal(argName);
+                        }
+
+                        gen(body);
+
+                        if (!isBlock(body)) {
+                            emit(OP_SCOPE_EXIT);
+                            emit(arity + 1);
+                        }
+
+                        // Explicit return to restore caller address
+                        emit(OP_RETURN);
+
+                        // Create the function
+                        auto fn = ALLOC_FUNCTION(co);
+
+                        // Restore the code object
+                        co = prevCo;
+
+                        // Add function as a constant to our co
+                        co->addConstant(fn);
+
+                        // And emit code for this new constant
+                        emit(OP_CONST);
+                        emit(co->constants.size() - 1);
+
+                        if (isGlobalScope()) {
+                            globals->define(fnName);
+                            emit(OP_SET_GLOBAL);
+                            emit(globals->getGlobalIndex(fnName));
+                        } else {
+                            co->addLocal(fnName);
+                            emit(OP_SET_GLOBAL);
+                            emit(co->getLocalIndex(fnName));
+                        }
                     }
                     /* Function calls */
                     else {
@@ -272,7 +330,9 @@ public:
      * Disassemble all compilation units.
      * */
     void disassembleBytecode() {
-        disassembler->disassemble(co);
+        for (auto &co_ : codeObjects_) {
+            disassembler->disassemble(co_);
+        }
     }
 
 private:
@@ -285,6 +345,16 @@ private:
      * Disassembler.
      * */
     std::unique_ptr<EvaDisassembler> disassembler;
+
+    /**
+     * Creates a new code object
+     * */
+     EvaValue createCodeObjectValue(const std::string &name, size_t arity = 0) {
+         auto coValue = ALLOC_CODE(name, arity);
+         auto co = AS_CODE(coValue);
+         codeObjects_.push_back(co);
+         return coValue;
+     }
 
     /**
      * Enters a new scope.
@@ -301,8 +371,12 @@ private:
         // within this specific scope.
         auto varsCount = getVarsCountOnScopeExit();
 
-        if (varsCount > 0) {
+        if (varsCount > 0 || co->arity > 0) {
             emit(OP_SCOPE_EXIT);
+
+            if (isFunctionBody()) {
+                varsCount += co->arity + 1;
+            }
             emit(varsCount);
         }
 
@@ -317,6 +391,13 @@ private:
     }
 
     /**
+     * Whether it's the function body.
+     * */
+    bool isFunctionBody() {
+        return co->name != "main" && co->scopeLevel == 1; // We have implicit block 0, so global scope will be 1
+    }
+
+    /**
      * Whether the expression is a decalration.
      * */
     bool isDeclaration(const Exp &exp) { return isVarDeclaration(exp); }
@@ -326,6 +407,13 @@ private:
      * */
     bool isVarDeclaration(const Exp &exp) {
         return isTaggedList(exp, "var");
+    }
+
+    /**
+     * (var <name> <value>)
+     * */
+    bool isBlock(const Exp &exp) {
+        return isTaggedList(exp, "begin");
     }
 
     /**
@@ -400,6 +488,11 @@ private:
     }
 
     CodeObject *co{};
+
+    /**
+     * All code objects.
+     * */
+     std::vector<CodeObject*> codeObjects_;
 
     /**
      * Compare ops map.

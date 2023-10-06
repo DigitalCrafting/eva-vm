@@ -282,7 +282,7 @@ public:
     void setGlobalVariables() {
         /* Native functions */
         globals->addNativeFunction(
-                "square",
+                "native-square",
                 [&]() {
                     auto x = AS_NUMBER(peek(0));
                     push(NUMBER(x * x));
@@ -291,7 +291,7 @@ public:
         );
 
         globals->addNativeFunction(
-                "sum",
+                "native-sum",
                 [&]() {
                     // Remember: first we take out second arg, because of stack structure
                     auto v2 = AS_NUMBER(peek(0));

@@ -41,7 +41,8 @@ private:
             case OP_SUB:
             case OP_MUL:
             case OP_DIV:
-            case OP_POP: {
+            case OP_POP:
+            case OP_RETURN: {
                 return disassembleSimple(co, opcode, offset);
             }
             case OP_SCOPE_EXIT:
