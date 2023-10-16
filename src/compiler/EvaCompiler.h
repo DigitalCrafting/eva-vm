@@ -40,15 +40,15 @@ public:
             disassembler(std::make_unique<EvaDisassembler>(globals)) {
     }
 
-    CodeObject *compile(const Exp &exp) {
+    void compile(const Exp &exp) {
         // Allocate new code object:
         co = AS_CODE(createCodeObjectValue("main"));
+        main = AS_FUNCTION(ALLOC_FUNCTION(co));
+
         // Generate recursively from top-level:
         gen(exp);
         // Explicit VM-stop marker.
         emit(OP_HALT);
-
-        return co;
     }
 
     /**
@@ -335,7 +335,15 @@ public:
         }
     }
 
+    /**
+     * Return main function (entry point).
+     * */
+    FunctionObject* getMainFunction() {
+        return main;
+    }
+
 private:
+
     /**
      * Global object.
      * */
@@ -487,7 +495,15 @@ private:
         writeByteAtOffset(offset + 1, value & 0xff);
     }
 
-    CodeObject *co{};
+    /**
+     * Compiling code object.
+     * */
+    CodeObject *co;
+
+    /**
+     * Main entry point (function).
+     * */
+     FunctionObject *main;
 
     /**
      * All code objects.

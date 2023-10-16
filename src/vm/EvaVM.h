@@ -27,12 +27,12 @@ using syntax::EvaParser;
 /**
  * Converts bytecode index to pointer
  * */
-#define TO_ADDRESS(index) (&co->code[index])
+#define TO_ADDRESS(index) (&fn->co->code[index])
 
 /**
  * Gets a constant from the pool.
  * */
-#define GET_CONST() (co->constants[READ_BYTE()])
+#define GET_CONST() (fn->co->constants[READ_BYTE()])
 
 /**
  * Stack top (StackOverflow after exceeding).
@@ -65,6 +65,27 @@ using syntax::EvaParser;
         }                          \
         push(BOOLEAN(res));\
     } while (false);
+
+/**
+ * Stack frame for function calls.
+ * */
+struct Frame {
+    /**
+     * Return address of the caller.
+     * */
+    uint8_t *ra;
+
+    /**
+     * Base pointer of the caller.
+     * */
+    EvaValue *bp;
+
+    /**
+     * Reference to the running function:
+     * contains code, locals, etc.
+     * */
+    FunctionObject *fn;
+};
 
 /**
  * Eva Virtual Machine
@@ -118,10 +139,12 @@ public:
         auto ast = parser->parse("(begin " + program + ")");
 
         // 2. Compile to Eva bytecode
-        co = compiler->compile(ast);
+        compiler->compile(ast);
+
+        fn = compiler->getMainFunction();
 
         // Set instruction pointer to beginning
-        ip = &co->code[0];
+        ip = &fn->co->code[0];
         // Init the stack
         sp = &stack[0];
         // Init the base (frame) pointer
@@ -268,7 +291,30 @@ public:
                         break;
                     }
 
-                    // 2. User-defined function (TODO)
+                    // 2. User-defined function
+                    auto callee = AS_FUNCTION(fnValue);
+
+                    callStack.push(Frame{ip, bp, fn});
+
+                    // To access locals, etc:
+                    fn = callee;
+
+                    // Set the base (frame) pointer for the callee
+                    bp = sp - argsCount - 1;
+
+                    ip = &callee->co->code[0];
+
+                    break;
+                }
+                /* Return from function */
+                case OP_RETURN: {
+                    auto callerFrame = callStack.top();
+                    ip = callerFrame.ra;
+                    bp = callerFrame.bp;
+                    fn = callerFrame.fn;
+
+                    callStack.pop();
+                    break;
                 }
                 default:
                     DIE << "Unknown opcode: " << std::hex << opcode;
@@ -349,24 +395,29 @@ public:
     std::array<EvaValue, STACK_LIMIT> stack;
 
     /**
-     * Code object.
+     * Separate stack for the calls. Keeps return address.
      * */
-    CodeObject *co;
+    std::stack<Frame> callStack;
+
+    /**
+     * Currently executing function.
+     * */
+    FunctionObject *fn;
 
     /**
      * Dumps the current stack
      * */
     void dumpStack() {
         std::cout << "\n---------- Stack ----------\n";
-         if (sp == stack.begin()) {
-             std::cout << "(empty)";
-         }
+        if (sp == stack.begin()) {
+            std::cout << "(empty)";
+        }
 
-         auto csp = sp - 1;
-         while (csp >= stack.begin()) {
-             std::cout << *csp-- << "\n";
-         }
-         std::cout << "\n";
+        auto csp = sp - 1;
+        while (csp >= stack.begin()) {
+            std::cout << *csp-- << "\n";
+        }
+        std::cout << "\n";
     }
 };
 
