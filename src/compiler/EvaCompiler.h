@@ -33,6 +33,17 @@
         emit(op);                  \
     } while (false);
 
+#define FUNCTION_CALL(exp) \
+    do {                   \
+        gen(exp.list[0]); \
+        for (auto i = 1; i < exp.list.size(); i++) { \
+            gen(exp.list[i]); \
+        } \
+        emit(OP_CALL); \
+        emit(exp.list.size() - 1); \
+    } while (false);
+
+
 class EvaCompiler {
 public:
     explicit EvaCompiler(std::shared_ptr<Global> globals) :
@@ -195,7 +206,17 @@ public:
                         /* Variable declaration */
                     else if (op == "var") {
                         auto varName = exp.list[1].string;
-                        gen(exp.list[2]);
+                        // Special treatment of (var foo (lambda ...))
+                        if (isLambda(exp.list[2])) {
+                            compileFunction(
+                                    exp.list[2],
+                                    varName,
+                                    exp.list[2].list[1],
+                                    exp.list[2].list[2]
+                            );
+                        } else {
+                            gen(exp.list[2]);
+                        }
 
                         if (isGlobalScope()) {
                             // 1. Global vars
@@ -249,54 +270,20 @@ public:
                         }
 
                         scopeExit();
-                    } else if (op == "def") {
+                    }
+                        /**
+                         * Function declaration: (def <name> <params> <body>)
+                         *
+                         * Sugar for: (var <name> (lambda <params> <body>))
+                         */
+                    else if (op == "def") {
                         auto fnName = exp.list[1].string;
-                        auto params = exp.list[2].list;
-                        auto arity = params.size();
-                        auto body = exp.list[3];
 
-                        // Save previous code object
-                        auto prevCo = co;
-
-                        // Function code object
-                        auto coValue = createCodeObjectValue(fnName, arity);
-                        co = AS_CODE(coValue);
-
-                        // Store new co as constant
-                        prevCo->addConstant(coValue);
-
-                        // Function name is registered as local,
-                        // so the function can call itself recursively
-                        co->addLocal(fnName);
-
-                        // Parameters are added as variables
-                        for (auto i = 0; i < arity; i++) {
-                            auto &argName = params[i].string;
-                            co->addLocal(argName);
-                        }
-
-                        gen(body);
-
-                        if (!isBlock(body)) {
-                            emit(OP_SCOPE_EXIT);
-                            emit(arity + 1);
-                        }
-
-                        // Explicit return to restore caller address
-                        emit(OP_RETURN);
-
-                        // Create the function
-                        auto fn = ALLOC_FUNCTION(co);
-
-                        // Restore the code object
-                        co = prevCo;
-
-                        // Add function as a constant to our co
-                        co->addConstant(fn);
-
-                        // And emit code for this new constant
-                        emit(OP_CONST);
-                        emit(co->constants.size() - 1);
+                        compileFunction(
+                                exp,
+                                fnName,
+                                exp.list[2],
+                                exp.list[3]);
 
                         if (isGlobalScope()) {
                             globals->define(fnName);
@@ -308,29 +295,83 @@ public:
                             emit(co->getLocalIndex(fnName));
                         }
                     }
-                    /* Function calls */
-                    else {
-                        // Push the function onto the stack
-                        gen(exp.list[0]);
-                        // Arguments
-                        for (auto i = 1; i < exp.list.size(); i++) {
-                            gen(exp.list[i]);
-                        }
-
-                        emit(OP_CALL);
-                        emit(exp.list.size() - 1);
+                        /**
+                         * Lambda: (lambda <params> <body>)
+                         */
+                    else if (op == "lambda") {
+                        compileFunction(
+                                exp,
+                                "lambda",
+                                exp.list[1],
+                                exp.list[2]);
                     }
+                        /* Function calls */
+                    else {
+                        FUNCTION_CALL(exp);
+                    }
+                }
+                    /* Lambda function calls */
+                else {
+                    FUNCTION_CALL(exp);
                 }
                 break;
             }
         }
     }
 
+    void compileFunction(const Exp &exp, const std::string fnName, const Exp &paramsExp, const Exp &body) {
+        auto params = paramsExp.list;
+        auto arity = params.size();
+
+        // Save previous code object
+        auto prevCo = co;
+
+        // Function code object
+        auto coValue = createCodeObjectValue(fnName, arity);
+        co = AS_CODE(coValue);
+
+        // Store new co as constant
+        prevCo->addConstant(coValue);
+
+        // Function name is registered as local,
+        // so the function can call itself recursively
+        co->addLocal(fnName);
+
+        // Parameters are added as variables
+        for (auto i = 0; i < arity; i++) {
+            auto &argName = params[i].string;
+            co->addLocal(argName);
+        }
+
+        gen(body);
+
+        if (!isBlock(body)) {
+            emit(OP_SCOPE_EXIT);
+            emit(arity + 1);
+        }
+
+        // Explicit return to restore caller address
+        emit(OP_RETURN);
+
+        // Create the function
+        auto fn = ALLOC_FUNCTION(co);
+
+        // Restore the code object
+        co = prevCo;
+
+        // Add function as a constant to our co
+        co->addConstant(fn);
+
+        // And emit code for this new constant
+        emit(OP_CONST);
+        emit(co->constants.size() - 1);
+    }
+
     /**
      * Disassemble all compilation units.
      * */
     void disassembleBytecode() {
-        for (auto &co_ : codeObjects_) {
+        for (auto &co_: codeObjects_) {
             disassembler->disassemble(co_);
         }
     }
@@ -338,7 +379,7 @@ public:
     /**
      * Return main function (entry point).
      * */
-    FunctionObject* getMainFunction() {
+    FunctionObject *getMainFunction() {
         return main;
     }
 
@@ -357,12 +398,12 @@ private:
     /**
      * Creates a new code object
      * */
-     EvaValue createCodeObjectValue(const std::string &name, size_t arity = 0) {
-         auto coValue = ALLOC_CODE(name, arity);
-         auto co = AS_CODE(coValue);
-         codeObjects_.push_back(co);
-         return coValue;
-     }
+    EvaValue createCodeObjectValue(const std::string &name, size_t arity = 0) {
+        auto coValue = ALLOC_CODE(name, arity);
+        auto co = AS_CODE(coValue);
+        codeObjects_.push_back(co);
+        return coValue;
+    }
 
     /**
      * Enters a new scope.
@@ -415,6 +456,13 @@ private:
      * */
     bool isVarDeclaration(const Exp &exp) {
         return isTaggedList(exp, "var");
+    }
+
+    /**
+     * (lambda <params> <body>)
+     * */
+    bool isLambda(const Exp &exp) {
+        return isTaggedList(exp, "lambda");
     }
 
     /**
@@ -503,12 +551,12 @@ private:
     /**
      * Main entry point (function).
      * */
-     FunctionObject *main;
+    FunctionObject *main;
 
     /**
      * All code objects.
      * */
-     std::vector<CodeObject*> codeObjects_;
+    std::vector<CodeObject *> codeObjects_;
 
     /**
      * Compare ops map.

@@ -11,13 +11,14 @@ int main(int argc, const char *argv[]) {
 
     auto result = vm.exec(R"(
         (def square (x) (* x x))
-        (def sum (a b) (begin
-            (var x 10)
-            (+ x (+ a b))
-        ))
+//        (def sum (a b) (begin
+//            (var x 10)
+//            (+ x (+ a b))
+//        ))
 //        (square 2)
 //        (def factorial (x) (if (== x 1) 1 (* x (factorial (- x 1)))))
 //        (factorial 5)
+          ((lambda (x) (* x x)) 2)
     )");
 
     log(result);
