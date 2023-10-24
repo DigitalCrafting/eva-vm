@@ -227,8 +227,6 @@ public:
                         } else {
                             // 2. Local vars
                             co->addLocal(varName);
-                            emit(OP_SET_LOCAL);
-                            emit(co->getLocalIndex(varName));
                         }
                     } else if (op == "set") {
                         auto varName = exp.list[1].string;
@@ -259,12 +257,12 @@ public:
                             // on the stack as the final result.
                             bool isLast = i == exp.list.size() - 1;
 
-                            auto isLocalDeclaration = isDeclaration(exp.list[i]) && !isGlobalScope();
+                            auto isDecl = isDeclaration(exp.list[i]);
 
                             // Generate expression code
                             gen(exp.list[i]);
 
-                            if (!isLast && !isLocalDeclaration) {
+                            if (!isLast && !isDecl) {
                                 emit(OP_POP);
                             }
                         }
@@ -291,8 +289,8 @@ public:
                             emit(globals->getGlobalIndex(fnName));
                         } else {
                             co->addLocal(fnName);
-                            emit(OP_SET_GLOBAL);
-                            emit(co->getLocalIndex(fnName));
+                            // Note: no need to explicitly "set" the var value, since the
+                            // function is already on the stack in the correct slot.
                         }
                     }
                         /**

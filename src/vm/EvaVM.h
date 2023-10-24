@@ -232,7 +232,7 @@ public:
                 }
                 case OP_SET_GLOBAL: {
                     auto globalIndex = (int) READ_BYTE();
-                    auto value = peek(0);
+                    auto value = pop();
                     globals->set(globalIndex, value);
                     break;
                 }
