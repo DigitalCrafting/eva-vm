@@ -9,6 +9,7 @@
 #include "../vm/EvaValue.h"
 #include "../vm/Logger.h"
 #include "../vm/Global.h"
+#include "../vm/Scope.h"
 #include "../bytecode/OpCode.h"
 
 #define ALLOC_CONST(tester, converter, allocator, value)    \
@@ -56,10 +57,100 @@ public:
         co = AS_CODE(createCodeObjectValue("main"));
         main = AS_FUNCTION(ALLOC_FUNCTION(co));
 
+        // Scope analysis
+        analyze(exp, nullptr);
+
         // Generate recursively from top-level:
         gen(exp);
         // Explicit VM-stop marker.
         emit(OP_HALT);
+    }
+
+    /**
+     * Scope analysis
+     * */
+    void analyze(const Exp &exp, std::shared_ptr<Scope> scope) {
+        if (exp.type == ExpType::SYMBOL) {
+            /**
+             * Boolean
+             * */
+            if (exp.string == "true" || exp.string == "false") {
+                // Do nothing
+            } else {
+                /**
+                 * Variables
+                 * */
+                scope->maybePromote(exp.string);
+            }
+        } else if (exp.type == ExpType::LIST) {
+            auto tag = exp.list[0];
+
+            if (tag.type == ExpType::SYMBOL) {
+                auto op = tag.string;
+
+                if (op == "begin") {
+                    auto newScope = std::make_shared<Scope>(
+                            scope == nullptr ? ScopeType::GLOBAL : ScopeType::BLOCK,
+                            scope
+                    );
+
+                    scopeInfo_[&exp] = newScope;
+
+                    for (auto i = 1; i < exp.list.size(); ++i) {
+                        analyze(exp.list[i], newScope);
+                    }
+                }
+                    // Variable declaration
+                else if (op == "var") {
+                    scope->addLocal(exp.list[1].string);
+                    analyze(exp.list[2], scope);
+                }
+                    // Function declaration
+                else if (op == "def") {
+                    auto fnName = exp.list[1].string;
+
+                    scope->addLocal(fnName);
+
+                    auto newScope = std::make_shared<Scope>(ScopeType::FUNCTION, scope);
+                    scopeInfo_[&exp] = newScope;
+
+                    newScope->addLocal(
+                            fnName); // we add function name as it's own local variable in order to do recursive calls
+
+                    auto arity = exp.list[2].list.size();
+
+                    // Params
+                    for (auto i = 0; i < arity; i++) {
+                        newScope->addLocal(exp.list[2].list[i].string);
+                    }
+
+                    // Body
+                    analyze(exp.list[3], newScope);
+                }
+                    // Lambda
+                else if (op == "lambda") {
+                    auto newScope = std::make_shared<Scope>(ScopeType::FUNCTION, scope);
+                    scopeInfo_[&exp] = newScope;
+                    auto arity = exp.list[1].list.size();
+
+                    // Params
+                    for (auto i = 0; i < arity; i++) {
+                        newScope->addLocal(exp.list[1].list[i].string);
+                    }
+
+                    // Body
+                    analyze(exp.list[2], newScope);
+                } else {
+                    for (auto i = 1; i < exp.list.size(); ++i) {
+                        analyze(exp.list[i], scope);
+                    }
+                }
+            } else {
+                for (auto i = 0; i < exp.list.size(); ++i) {
+                    analyze(exp.list[i], scope);
+                }
+            }
+        }
     }
 
     /**
@@ -86,18 +177,20 @@ public:
                     /* Variable */
                     auto varName = exp.string;
 
-                    auto localIndex = co->getLocalIndex(varName);
-                    if (localIndex != -1) {
+                    auto opCodeGetter = scopeStack_.top()->getNameGetter(varName);
+                    emit(opCodeGetter);
+
+                    if (opCodeGetter == OP_GET_LOCAL) {
                         // 1. Local variables
-                        emit(OP_GET_LOCAL);
-                        emit(localIndex);
+                        emit(co->getLocalIndex(varName));
+                    } else if (opCodeGetter == OP_GET_CELL) {
+                        emit(co->getCellIndex(varName));
                     } else {
                         // 2. Global variables
                         if (!globals->exists(varName)) {
                             DIE << "[EvaCompiler]: Reference error: " << varName << " doesn't exist.";
                         }
 
-                        emit(OP_GET_GLOBAL);
                         emit(globals->getGlobalIndex(varName));
                     }
                 }
@@ -206,6 +299,8 @@ public:
                         /* Variable declaration */
                     else if (op == "var") {
                         auto varName = exp.list[1].string;
+                        auto opCodeSetter = scopeStack_.top()->getNameSetter(varName);
+
                         // Special treatment of (var foo (lambda ...))
                         if (isLambda(exp.list[2])) {
                             compileFunction(
@@ -218,27 +313,38 @@ public:
                             gen(exp.list[2]);
                         }
 
-                        if (isGlobalScope()) {
+                        if (opCodeSetter == OP_SET_GLOBAL) {
                             // 1. Global vars
                             globals->define(varName);
                             // Initializer:
                             emit(OP_SET_GLOBAL);
                             emit(globals->getGlobalIndex(varName));
+                        } else if (opCodeSetter == OP_SET_CELL) {
+                            // 2. Cells
+                            co->cellNames.push_back(varName);
+                            emit(OP_SET_CELL);
+                            emit(co->cellNames.size() - 1);
+                            emit(OP_POP);
                         } else {
-                            // 2. Local vars
+                            // 3. Local vars
                             co->addLocal(varName);
                         }
                     } else if (op == "set") {
                         auto varName = exp.list[1].string;
+                        auto opCodeSetter = scopeStack_.top()->getNameSetter(varName);
+
                         gen(exp.list[2]);
 
-                        auto localIndex = co->getLocalIndex(varName);
-                        if (localIndex != -1) {
+                        if (opCodeSetter == OP_SET_LOCAL) {
                             // 1. Local vars
                             emit(OP_SET_LOCAL);
-                            emit(localIndex);
+                            emit(co->getLocalIndex(varName));
+                        } else if (opCodeSetter == OP_SET_CELL) {
+                            // 2. Cell vars
+                            emit(OP_SET_CELL);
+                            emit(co->getCellIndex(varName));
                         } else {
-                            // 2. Global vars
+                            // 3. Global vars
                             auto globalIndex = globals->getGlobalIndex(varName);
 
                             if (globalIndex == -1) {
@@ -249,13 +355,14 @@ public:
                             emit(globalIndex);
                         }
                     } else if (op == "begin") {
-                        scopeEnter();
+                        scopeStack_.push(scopeInfo_.at(&exp));
+                        blockEnter();
 
                         // Compile each expression within a block
                         for (auto i = 1; i < exp.list.size(); i++) {
                             // The value of the last expression is kept
                             // on the stack as the final result.
-                            bool isLast = i == exp.list.size() - 1;
+                            bool isLast = (i == exp.list.size() - 1);
 
                             auto isDecl = isDeclaration(exp.list[i]);
 
@@ -267,7 +374,8 @@ public:
                             }
                         }
 
-                        scopeExit();
+                        blockExit();
+                        scopeStack_.pop();
                     }
                         /**
                          * Function declaration: (def <name> <params> <body>)
@@ -318,6 +426,9 @@ public:
     }
 
     void compileFunction(const Exp &exp, const std::string fnName, const Exp &paramsExp, const Exp &body) {
+        auto scopeInfo = scopeInfo_.at(&exp);
+        scopeStack_.push(scopeInfo);
+
         auto params = paramsExp.list;
         auto arity = params.size();
 
@@ -327,6 +438,13 @@ public:
         // Function code object
         auto coValue = createCodeObjectValue(fnName, arity);
         co = AS_CODE(coValue);
+
+        // Put `free` and `cell` vars from the scope into the
+        // cellNames of the code object.
+        co->freeCount = scopeInfo->free.size();
+        co->cellNames.reserve(scopeInfo->free.size() + scopeInfo->cells.size());
+        co->cellNames.insert(co->cellNames.end(), scopeInfo->free.begin(), scopeInfo->free.end());
+        co->cellNames.insert(co->cellNames.end(), scopeInfo->cells.begin(), scopeInfo->cells.end());
 
         // Store new co as constant
         prevCo->addConstant(coValue);
@@ -339,6 +457,14 @@ public:
         for (auto i = 0; i < arity; i++) {
             auto &argName = params[i].string;
             co->addLocal(argName);
+
+            // Note: if the param is captured by the cell, emit the code for it.
+            // We also don't pop the param value in this case, since OP_SCOPE_EXIT would pop it.
+            auto cellIndex = co->getCellIndex(argName);
+            if (cellIndex != -1) {
+                emit(OP_SET_CELL);
+                emit(cellIndex);
+            }
         }
 
         gen(body);
@@ -363,6 +489,8 @@ public:
         // And emit code for this new constant
         emit(OP_CONST);
         emit(co->constants.size() - 1);
+
+        scopeStack_.pop();
     }
 
     /**
@@ -404,16 +532,16 @@ private:
     }
 
     /**
-     * Enters a new scope.
+     * Enters a new block.
      * */
-    void scopeEnter() {
+    void blockEnter() {
         co->scopeLevel++;
     }
 
     /**
-     * Exists a new scope.
+     * Exits a block.
      * */
-    void scopeExit() {
+    void blockExit() {
         // Pop vars from the stack if they were declared
         // within this specific scope.
         auto varsCount = getVarsCountOnScopeExit();
@@ -447,7 +575,7 @@ private:
     /**
      * Whether the expression is a decalration.
      * */
-    bool isDeclaration(const Exp &exp) { return isVarDeclaration(exp); }
+    bool isDeclaration(const Exp &exp) { return isVarDeclaration(exp) || isFunctionDeclaration(exp); }
 
     /**
      * (var <name> <value>)
@@ -461,6 +589,13 @@ private:
      * */
     bool isLambda(const Exp &exp) {
         return isTaggedList(exp, "lambda");
+    }
+
+    /**
+     * (def <name> ...)
+     * */
+    bool isFunctionDeclaration(const Exp &exp) {
+        return isTaggedList(exp, "def");
     }
 
     /**
@@ -540,6 +675,16 @@ private:
         writeByteAtOffset(offset, (value >> 8) & 0xff);
         writeByteAtOffset(offset + 1, value & 0xff);
     }
+
+    /**
+     * Scope info
+     * */
+    std::map<const Exp *, std::shared_ptr<Scope>> scopeInfo_;
+
+    /**
+     * Scope stack
+     * */
+    std::stack<std::shared_ptr<Scope>> scopeStack_;
 
     /**
      * Compiling code object.

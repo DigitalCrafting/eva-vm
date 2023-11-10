@@ -111,6 +111,16 @@ struct CodeObject : public Object {
     std::vector<LocalVar> locals;
 
     /**
+     * Cell var names.
+     * */
+    std::vector<std::string> cellNames;
+
+    /**
+     * Free vars count.
+     * */
+    size_t freeCount = 0;
+
+    /**
      *
      * */
     void addLocal(const std::string &name) {
@@ -128,6 +138,20 @@ struct CodeObject : public Object {
         if (!locals.empty()) {
             for (auto i = (int) locals.size() - 1; i >= 0; i--) {
                 if (locals[i].name == name) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+    * Get cell index.
+    * */
+    int getCellIndex(const std::string &name) {
+        if (!cellNames.empty()) {
+            for (auto i = (int) cellNames.size() - 1; i >= 0; i--) {
+                if (cellNames[i] == name) {
                     return i;
                 }
             }

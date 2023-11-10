@@ -63,6 +63,10 @@ private:
             case OP_SET_GLOBAL: {
                 return disassembleGlobal(co, opcode, offset);
             }
+            case OP_GET_CELL:
+            case OP_SET_CELL: {
+                return disassembleCell(co, opcode, offset);
+            }
             case OP_SET_LOCAL:
             case OP_GET_LOCAL: {
                 return disassembleLocal(co, opcode, offset);
@@ -126,6 +130,17 @@ private:
         printOpCode(opcode);
         auto localIndex = co->code[offset + 1];
         std::cout << (int) localIndex << " (" << co->locals[localIndex].name << ")";
+        return offset + 2;
+    }
+
+    /**
+     * Disassemble cell variable instruction.
+     * */
+    size_t disassembleCell(CodeObject *co, uint8_t opcode, size_t offset) {
+        dumpBytes(co, offset, 2);
+        printOpCode(opcode);
+        auto cellIndex = co->code[offset + 1];
+        std::cout << (int) cellIndex << " (" << co->cellNames[cellIndex] << ")";
         return offset + 2;
     }
 

@@ -10,14 +10,19 @@ int main(int argc, const char *argv[]) {
     EvaVM vm;
 
     auto result = vm.exec(R"(
-        (var a 1)
-        (var b 2)
-        (+ a 1)
+        (var x 10)
+        (def foo () x)
         (begin
-            (var x 0)
-            (var y 20)
-            (set x 10)
-            (+ x y)
+            (var y 100)
+            (var q 300)
+            q
+            (+ y x)
+            (begin
+                (var z 200)
+                z
+                (def bar () (+ y z))
+                (bar)
+            )
         )
     )");
 
