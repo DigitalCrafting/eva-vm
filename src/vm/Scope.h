@@ -67,6 +67,11 @@ struct Scope {
             initAllocType = allocInfo[name];
         }
 
+        // Already promoted
+        if (initAllocType == AllocType::CELL) {
+            return;
+        }
+
         auto [ownerScope, allocType] = resolve(name, initAllocType);
 
         // Update the alloc type based on resolution

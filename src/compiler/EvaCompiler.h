@@ -477,18 +477,41 @@ public:
         // Explicit return to restore caller address
         emit(OP_RETURN);
 
-        // Create the function
-        auto fn = ALLOC_FUNCTION(co);
+        // 1. Simple functions (allocated at compile time).
+        // If it's not a closure (doesn't have free variables) allocate it at compile time and store as a constant
+        // Closure are allocated at runtime, but reuse the same code object
+        if (scopeInfo->free.size() == 0) {
+            // Create the function
+            auto fn = ALLOC_FUNCTION(co);
 
-        // Restore the code object
-        co = prevCo;
+            // Restore the code object
+            co = prevCo;
 
-        // Add function as a constant to our co
-        co->addConstant(fn);
+            // Add function as a constant to our co
+            co->addConstant(fn);
 
-        // And emit code for this new constant
-        emit(OP_CONST);
-        emit(co->constants.size() - 1);
+            // And emit code for this new constant
+            emit(OP_CONST);
+            emit(co->constants.size() - 1);
+        }
+        // 2. Closures
+        // - Load all free vars to capture (indices are taken from the 'cells' of the parent co)
+        // - Load code object for the current function
+        // - Make function
+        else {
+            // Restore the code object
+            co = prevCo;
+
+            for (const auto &freeVar : scopeInfo->free) {
+                emit(OP_LOAD_CELL);
+                emit(prevCo->getCellIndex(freeVar));
+            }
+            emit(OP_CONST);
+            emit(co->constants.size() - 1);
+
+            emit(OP_MAKE_FUNCTION);
+            emit(scopeInfo->free.size());
+        }
 
         scopeStack_.pop();
     }

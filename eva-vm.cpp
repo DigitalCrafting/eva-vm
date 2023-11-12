@@ -14,6 +14,7 @@ int main(int argc, const char *argv[]) {
         (def foo () x)
         (begin
             (var y 100)
+            (set y 1000)
             (var q 300)
             q
             (+ y x)

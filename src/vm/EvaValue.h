@@ -20,7 +20,8 @@ enum class ObjectType {
     STRING,
     CODE,
     NATIVE,
-    FUNCTION
+    FUNCTION,
+    CELL
 };
 
 /**
@@ -161,18 +162,35 @@ struct CodeObject : public Object {
 };
 
 /**
+ * Heap-allocated cell.
+ *
+ * Used to capture closured variables.
+ * */
+struct CellObject : public Object {
+    CellObject(EvaValue value) : Object(ObjectType::CELL), value(value) {}
+
+    EvaValue value;
+
+};
+
+/**
  * Function object.
  * */
 struct FunctionObject : public Object {
     FunctionObject(CodeObject *co) : Object(ObjectType::FUNCTION), co(co) {}
 
     CodeObject *co;
+
+    std::vector<CellObject *> cells;
 };
 
 /* ------------------------------------- */
 // Constructors:
 #define NUMBER(value) ((EvaValue){.type = EvaValueType::NUMBER, .number = (value)})
 #define BOOLEAN(value) ((EvaValue){.type = EvaValueType::BOOLEAN, .boolean = (value)})
+#define OBJECT(value) ((EvaValue){.type = EvaValueType::OBJECT, .object = (value)})
+
+#define CELL(cellObject) OBJECT((Object*)cellObject)
 
 #define ALLOC_STRING(value) \
     ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new StringObject(value)})
@@ -182,6 +200,8 @@ struct FunctionObject : public Object {
     ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new NativeObject(fn, name, arity)})
 #define ALLOC_FUNCTION(co) \
     ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new FunctionObject(co)})
+#define ALLOC_CELL(evaValue) \
+    ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new CellObject(evaValue)})
 
 /* ------------------------------------- */
 // Accessor:
@@ -195,6 +215,7 @@ struct FunctionObject : public Object {
 #define AS_CODE(evaValue) ((CodeObject*)(evaValue).object)
 #define AS_NATIVE(evaValue) ((NativeObject*)(evaValue).object)
 #define AS_FUNCTION(evaValue) ((FunctionObject*)(evaValue).object)
+#define AS_CELL(evaValue) ((CellObject*)(evaValue).object)
 
 /* ------------------------------------- */
 // Testers:
@@ -209,6 +230,7 @@ struct FunctionObject : public Object {
 #define IS_CODE(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::CODE)
 #define IS_NATIVE(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::NATIVE)
 #define IS_FUNCTION(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::FUNCTION)
+#define IS_CELL(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::CELL)
 
 /**
  * String representation used in constants for debug.
@@ -226,6 +248,8 @@ std::string evaValueToTypeString(const EvaValue &evaValue) {
         return "NATIVE";
     } else if (IS_FUNCTION(evaValue)) {
         return "FUNCTION";
+    } else if (IS_CELL(evaValue)) {
+        return "CELL";
     } else {
         DIE << "evaValueToTypeString: unknown type " << (int) evaValue.type;
     }
@@ -249,6 +273,9 @@ std::string evaValueToConstantString(const EvaValue &evaValue) {
     } else if (IS_FUNCTION(evaValue)) {
         auto fn = AS_FUNCTION(evaValue);
         ss << fn->co->name << "/" << fn->co->arity;
+    } else if (IS_CELL(evaValue)) {
+        auto cell = AS_CELL(evaValue);
+        ss << "cell: " << evaValueToConstantString(cell->value);
     } else if (IS_NATIVE(evaValue)) {
         auto fn = AS_NATIVE(evaValue);
         ss << fn->name << "/" << fn->arity;
