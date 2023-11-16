@@ -7,31 +7,21 @@
  * Eva VM main executable
  * */
 int main(int argc, const char *argv[]) {
-    EvaVM vm;
+    {
+        EvaVM vm;
+        Traceable::printStats();
+        auto result = vm.exec(R"(
+            (+ "Hello" ", world!")
+        )");
 
-    auto result = vm.exec(R"(
-        (var x 10)
-        (def foo () x)
-        (begin
-            (var y 100)
-            (set y 1000)
-            (var q 300)
-            q
-            (+ y x)
-            (begin
-                (var z 200)
-                z
-                (def bar () (+ y z))
-                (bar)
-            )
-        )
-    )");
+        log(result);
 
-    log(result);
+        Traceable::printStats();
+//      vm.dumpStack();
+    }
 
-//    vm.dumpStack();
+    Traceable::printStats();
 
     std::cout << "All done!\n";
-
     return 0;
 }

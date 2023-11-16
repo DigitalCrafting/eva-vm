@@ -3,6 +3,7 @@
 
 #include <string>
 #include <functional>
+#include <list>
 
 /**
  * Eva value type.
@@ -25,9 +26,70 @@ enum class ObjectType {
 };
 
 /**
+ * Base traceable object
+ *
+ * Stores object header.
+ * */
+struct Traceable {
+    /* Whether the object was marked during the trace, used in Mark-Sweep GC. */
+    bool marked;
+
+    size_t size;
+
+    /**
+     * Allocator.
+     * */
+    static void *operator new(size_t size) {
+        void *object = ::operator new(size);
+
+        ((Traceable *) object)->size = size;
+
+        Traceable::objects.push_back((Traceable *) object);
+        Traceable::bytesAllocated += size;
+
+        return object;
+    }
+
+    /**
+     * Deallocator.
+     * */
+    static void operator delete(void *object) {
+        Traceable::bytesAllocated -= ((Traceable *) object)->size;
+        free(object);
+        // Note: remove from the Traceable::object during GC cycle.
+    }
+
+    /* Cleanup for all objects. */
+    static void cleanup() {
+        for (auto &object: objects) {
+            delete object;
+        }
+        objects.clear();
+    }
+
+    /* Prints memory stats. */
+    static void printStats() {
+        std::cout << "------------------------------\n";
+        std::cout << "Memory stats:\n\n";
+        std::cout << "Objects allocated : " << std::dec << Traceable::objects.size() << "\n";
+        std::cout << "Bytes allocated   : " << std::dec << Traceable::bytesAllocated << "\n\n";
+    }
+
+    /* Total number of allocated bytes */
+    static size_t bytesAllocated;
+
+    /* List of all allocated objects */
+    static std::list<Traceable *> objects;
+};
+
+size_t Traceable::bytesAllocated{0};
+
+std::list<Traceable *> Traceable::objects{};
+
+/**
  * Base object.
  * */
-struct Object {
+struct Object : public Traceable {
     explicit Object(ObjectType type) : type(type) {};
 
     ObjectType type;

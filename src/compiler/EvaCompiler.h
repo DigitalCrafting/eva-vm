@@ -57,6 +57,8 @@ public:
         co = AS_CODE(createCodeObjectValue("main"));
         main = AS_FUNCTION(ALLOC_FUNCTION(co));
 
+        constantObject_.insert((Traceable *) main);
+
         // Scope analysis
         analyze(exp, nullptr);
 
@@ -483,6 +485,7 @@ public:
         if (scopeInfo->free.size() == 0) {
             // Create the function
             auto fn = ALLOC_FUNCTION(co);
+            constantObject_.insert((Traceable *) AS_OBJECT(fn));
 
             // Restore the code object
             co = prevCo;
@@ -494,15 +497,15 @@ public:
             emit(OP_CONST);
             emit(co->constants.size() - 1);
         }
-        // 2. Closures
-        // - Load all free vars to capture (indices are taken from the 'cells' of the parent co)
-        // - Load code object for the current function
-        // - Make function
+            // 2. Closures
+            // - Load all free vars to capture (indices are taken from the 'cells' of the parent co)
+            // - Load code object for the current function
+            // - Make function
         else {
             // Restore the code object
             co = prevCo;
 
-            for (const auto &freeVar : scopeInfo->free) {
+            for (const auto &freeVar: scopeInfo->free) {
                 emit(OP_LOAD_CELL);
                 emit(prevCo->getCellIndex(freeVar));
             }
@@ -550,8 +553,18 @@ private:
     EvaValue createCodeObjectValue(const std::string &name, size_t arity = 0) {
         auto coValue = ALLOC_CODE(name, arity);
         auto co = AS_CODE(coValue);
+
         codeObjects_.push_back(co);
+        constantObject_.insert((Traceable *) co);
+
         return coValue;
+    }
+
+    /**
+     * Returns all constant traceable objects.
+     * */
+    std::set<Traceable *> &getConstantObjects() {
+        return constantObject_;
     }
 
     /**
@@ -723,6 +736,11 @@ private:
      * All code objects.
      * */
     std::vector<CodeObject *> codeObjects_;
+
+    /**
+     * All objects from the constant pools of all code objects.
+     * */
+    std::set<Traceable *> constantObject_;
 
     /**
      * Compare ops map.

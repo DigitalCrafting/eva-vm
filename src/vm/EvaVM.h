@@ -99,6 +99,11 @@ public:
         setGlobalVariables();
     }
 
+    /* VM shutdown */
+    ~EvaVM() {
+        Traceable::cleanup();
+    }
+
     /**
      * Push value onto the stack.
      * */
