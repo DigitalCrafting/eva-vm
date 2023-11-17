@@ -9,18 +9,20 @@
 int main(int argc, const char *argv[]) {
     {
         EvaVM vm;
-        Traceable::printStats();
+//        Traceable::printStats();
         auto result = vm.exec(R"(
+            (+ "Hello" ", world!")
+            (+ "Hello" ", world!")
             (+ "Hello" ", world!")
         )");
 
         log(result);
 
-        Traceable::printStats();
+//        Traceable::printStats();
 //      vm.dumpStack();
     }
 
-    Traceable::printStats();
+//    Traceable::printStats();
 
     std::cout << "All done!\n";
     return 0;

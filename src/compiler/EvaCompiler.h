@@ -535,6 +535,13 @@ public:
         return main;
     }
 
+    /**
+     * Returns all constant traceable objects.
+     * */
+    std::set<Traceable *> &getConstantObjects() {
+        return constantObject_;
+    }
+
 private:
 
     /**
@@ -558,13 +565,6 @@ private:
         constantObject_.insert((Traceable *) co);
 
         return coValue;
-    }
-
-    /**
-     * Returns all constant traceable objects.
-     * */
-    std::set<Traceable *> &getConstantObjects() {
-        return constantObject_;
     }
 
     /**
@@ -679,6 +679,7 @@ private:
      * */
     size_t stringConstIdx(const std::string &value) {
         ALLOC_CONST(IS_STRING, AS_CPPSTRING, ALLOC_STRING, value);
+        constantObject_.insert((Traceable*)co->constants.back().object);
         return co->constants.size() - 1;
     }
 

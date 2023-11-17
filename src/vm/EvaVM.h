@@ -1,15 +1,17 @@
 #ifndef EVA_VM_EVAVM_H
 #define EVA_VM_EVAVM_H
 
-#include <string>
-#include <vector>
-#include <array>
-#include "./Logger.h"
+#include "../bytecode/OpCode.h"
+#include "../compiler/EvaCompiler.h"
+#include "../gc/EvaCollector.h"
+#include "../parser/EvaParser.h"
 #include "./EvaValue.h"
 #include "./Global.h"
-#include "../compiler/EvaCompiler.h"
-#include "../parser/EvaParser.h"
-#include "../bytecode/OpCode.h"
+#include "./Logger.h"
+#include <array>
+#include <memory>
+#include <string>
+#include <vector>
 
 using syntax::EvaParser;
 
@@ -40,31 +42,59 @@ using syntax::EvaParser;
 #define STACK_LIMIT 512
 
 /**
+ * Memory threshold after which GC is triggered.
+ * */
+#define GC_THRESHOLD 1024
+
+/**
+ * Runtime allocation, can call GC.
+ * */
+#define MEM(allocator, ...) (maybeGC(), allocator(__VA_ARGS__))
+
+/**
  * Binary operation.
  * */
-#define BINARY_OP(op) \
-    do {              \
-        auto op2 = AS_NUMBER(pop()); \
-        auto op1 = AS_NUMBER(pop()); \
-        push(NUMBER(op1 op op2)); \
-    } while (false)
+#define BINARY_OP(op)                                                          \
+  do {                                                                         \
+    auto op2 = AS_NUMBER(pop());                                               \
+    auto op1 = AS_NUMBER(pop());                                               \
+    push(NUMBER(op1 op op2));                                                  \
+  } while (false)
 
 /**
  * Generic value comparison.
  * */
-#define COMPARE_VALUES(op, v1, v2) \
-    do {                           \
-        bool res;                  \
-        switch (op) {             \
-            case 0: {res = v1 < v2; break; }                           \
-            case 1: {res = v1 > v2; break; }                           \
-            case 2: {res = v1 == v2; break; }                           \
-            case 3: {res = v1 >= v2; break; }                           \
-            case 4: {res = v1 <= v2; break; }                           \
-            case 5: {res = v1 != v2; break; }                           \
-        }                          \
-        push(BOOLEAN(res));\
-    } while (false);
+#define COMPARE_VALUES(op, v1, v2)                                             \
+  do {                                                                         \
+    bool res;                                                                  \
+    switch (op) {                                                              \
+    case 0: {                                                                  \
+      res = v1 < v2;                                                           \
+      break;                                                                   \
+    }                                                                          \
+    case 1: {                                                                  \
+      res = v1 > v2;                                                           \
+      break;                                                                   \
+    }                                                                          \
+    case 2: {                                                                  \
+      res = v1 == v2;                                                          \
+      break;                                                                   \
+    }                                                                          \
+    case 3: {                                                                  \
+      res = v1 >= v2;                                                          \
+      break;                                                                   \
+    }                                                                          \
+    case 4: {                                                                  \
+      res = v1 <= v2;                                                          \
+      break;                                                                   \
+    }                                                                          \
+    case 5: {                                                                  \
+      res = v1 != v2;                                                          \
+      break;                                                                   \
+    }                                                                          \
+    }                                                                          \
+    push(BOOLEAN(res));                                                        \
+  } while (false);
 
 /**
  * Stack frame for function calls.
@@ -92,17 +122,16 @@ struct Frame {
  * */
 class EvaVM {
 public:
-    EvaVM() :
-            globals(std::make_shared<Global>()),
-            parser(std::make_unique<EvaParser>()),
-            compiler(std::make_unique<EvaCompiler>(globals)) {
+    EvaVM()
+            : globals(std::make_shared<Global>()),
+              parser(std::make_unique<EvaParser>()),
+              compiler(std::make_unique<EvaCompiler>(globals)),
+              collector(std::make_unique<EvaCollector>()) {
         setGlobalVariables();
     }
 
     /* VM shutdown */
-    ~EvaVM() {
-        Traceable::cleanup();
-    }
+    ~EvaVM() { Traceable::cleanup(); }
 
     /**
      * Push value onto the stack.
@@ -165,7 +194,7 @@ public:
      * */
     EvaValue eval() {
         for (;;) {
-//            dumpStack();
+            //            dumpStack();
             int opcode = READ_BYTE();
             switch (opcode) {
                 case OP_HALT:
@@ -184,7 +213,7 @@ public:
                     } else if (IS_STRING(op1) && IS_STRING(op2)) {
                         auto v1 = AS_CPPSTRING(op1);
                         auto v2 = AS_CPPSTRING(op2);
-                        push(ALLOC_STRING(v1 + v2));
+                        push(MEM(ALLOC_STRING, v1 + v2));
                     }
                     break;
                 }
@@ -274,7 +303,7 @@ public:
 
                     // Allocate the cell if it's not there yet
                     if (fn->cells.size() <= cellIndex) {
-                        fn->cells.push_back(AS_CELL(ALLOC_CELL(value)));
+                        fn->cells.push_back(AS_CELL(MEM(ALLOC_CELL, value)));
                     } else {
                         // Update the cell
                         fn->cells[cellIndex]->value = value;
@@ -291,7 +320,7 @@ public:
                     auto co = AS_CODE(pop());
                     auto cellsCount = READ_BYTE();
 
-                    auto fnValue = ALLOC_FUNCTION(co);
+                    auto fnValue = MEM(ALLOC_FUNCTION, co);
                     auto fn = AS_FUNCTION(fnValue);
 
                     // Capture
@@ -312,7 +341,8 @@ public:
                 case OP_SCOPE_EXIT: {
                     auto count = READ_BYTE();
 
-                    // Move the result above (or below, depends on the visualization) the vars
+                    // Move the result above (or below, depends on the visualization) the
+                    // vars
                     *(sp - 1 - count) = peek(0);
 
                     popN(count);
@@ -343,8 +373,8 @@ public:
                     // To access locals, etc:
                     fn = callee;
 
-                    // Shrink the cells vector to the size of only free vars, since other (own) cells should be
-                    // reallocated for each invocation
+                    // Shrink the cells vector to the size of only free vars, since other
+                    // (own) cells should be reallocated for each invocation
                     fn->cells.resize(fn->co->freeCount);
 
                     // Set the base (frame) pointer for the callee
@@ -381,8 +411,7 @@ public:
                     auto x = AS_NUMBER(peek(0));
                     push(NUMBER(x * x));
                 },
-                1
-        );
+                1);
 
         globals->addNativeFunction(
                 "native-sum",
@@ -392,8 +421,7 @@ public:
                     auto v1 = AS_NUMBER(peek(1));
                     push(NUMBER(v1 + v2));
                 },
-                2
-        );
+                2);
 
         /* Global variables */
         globals->addConst("VERSION", 1);
@@ -405,6 +433,75 @@ public:
             DIE << "popN(): empty stack.\n";
         }
         sp -= count;
+    }
+
+    // ----------------------------------------------
+    // GC Operations:
+
+    std::set<Traceable *> getStackGCRoots() {
+        std::set<Traceable *> roots;
+        auto stackEntry = sp;
+        while (stackEntry-- != stack.begin()) {
+            if (IS_OBJECT(*stackEntry)) {
+                roots.insert((Traceable *) stackEntry->object);
+            }
+        }
+        return roots;
+    }
+
+    std::set<Traceable *> getConstantGCRoots() {
+        return compiler->getConstantObjects();
+    }
+
+    std::set<Traceable *> getGlobalGCRoots() {
+        std::set<Traceable *> roots;
+        for (const auto& global : globals->globals) {
+            if (IS_OBJECT(global.value)) {
+                roots.insert((Traceable*)global.value.object);
+            }
+        }
+        return roots;
+    }
+
+    /**
+     * Obtain GC roots: variables on the stack, globals, constants.
+     * */
+    std::set<Traceable *> getGCRoots() {
+        // Stack:
+        auto roots = getStackGCRoots();
+
+        // Constant pool
+        auto constantRoots = getConstantGCRoots();
+        roots.insert(constantRoots.begin(), constantRoots.end());
+
+        // Global
+        auto globalRoots = getGlobalGCRoots();
+        roots.insert(globalRoots.begin(), globalRoots.end());
+
+        return roots;
+    }
+
+    /**
+     * Spawns a pottential GC cycle.
+     * */
+    void maybeGC() {
+        if (Traceable::bytesAllocated < GC_THRESHOLD) {
+            return;
+        }
+
+        auto roots = getGCRoots();
+
+        if (roots.size() == 0) {
+            return;
+        }
+
+        std::cout << "---------------- Before GC stats ----------------\n";
+        Traceable::printStats();
+
+        collector->gc(roots);
+
+        std::cout << "---------------- After GC stats ----------------\n";
+        Traceable::printStats();
     }
 
     /**
@@ -421,6 +518,11 @@ public:
      * Compiler
      * */
     std::unique_ptr<EvaCompiler> compiler;
+
+    /**
+     * Garbage collector
+     * */
+    std::unique_ptr<EvaCollector> collector;
 
     /**
      * Instruction pointer.
