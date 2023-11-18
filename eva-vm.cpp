@@ -11,9 +11,20 @@ int main(int argc, const char *argv[]) {
         EvaVM vm;
 //        Traceable::printStats();
         auto result = vm.exec(R"(
-            (+ "Hello" ", world!")
-            (+ "Hello" ", world!")
-            (+ "Hello" ", world!")
+            (class Point null
+                (def constructor (self x y)
+                    (begin
+                        //(set (prop self x) x)
+                        //(set (prop self y) y)
+                        self
+                    )
+                )
+                (def calc (self)
+                    //(+ (prop self x) (prop self y))
+                    1
+                )
+            )
+            Point
         )");
 
         log(result);

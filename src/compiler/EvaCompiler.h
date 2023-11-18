@@ -76,7 +76,7 @@ public:
             /**
              * Boolean
              * */
-            if (exp.string == "true" || exp.string == "false") {
+            if (exp.string == "true" || exp.string == "false" || exp.string == "null") {
                 // Do nothing
             } else {
                 /**
@@ -142,6 +142,16 @@ public:
 
                     // Body
                     analyze(exp.list[2], newScope);
+                }
+                    // Class declaration
+                else if (op == "class") {
+                    auto className = exp.list[1].string;
+                    auto newScope = std::make_shared<Scope>(ScopeType::CLASS, scope);
+                    scopeInfo_[&exp] = newScope;
+                    scope->addLocal(className);
+                    for (auto i = 3; i < exp.list.size(); i++) {
+                        analyze(exp.list[i], scope);
+                    }
                 } else {
                     for (auto i = 1; i < exp.list.size(); ++i) {
                         analyze(exp.list[i], scope);
@@ -393,14 +403,16 @@ public:
                                 exp.list[2],
                                 exp.list[3]);
 
-                        if (isGlobalScope()) {
-                            globals->define(fnName);
-                            emit(OP_SET_GLOBAL);
-                            emit(globals->getGlobalIndex(fnName));
-                        } else {
-                            co->addLocal(fnName);
-                            // Note: no need to explicitly "set" the var value, since the
-                            // function is already on the stack in the correct slot.
+                        if (classObject_ == nullptr) {
+                            if (isGlobalScope()) {
+                                globals->define(fnName);
+                                emit(OP_SET_GLOBAL);
+                                emit(globals->getGlobalIndex(fnName));
+                            } else {
+                                co->addLocal(fnName);
+                                // Note: no need to explicitly "set" the var value, since the
+                                // function is already on the stack in the correct slot.
+                            }
                         }
                     }
                         /**
@@ -412,6 +424,50 @@ public:
                                 "lambda",
                                 exp.list[1],
                                 exp.list[2]);
+                    }
+                        /**
+                         * Class declaration:
+                         *
+                         * (class A <super> <body>)
+                         * */
+                    else if (op == "class") {
+                        auto name = exp.list[1].string;
+                        auto superClass = exp.list[2].string == "null"
+                                          ? nullptr
+                                          : getClassByName(exp.list[2].string);
+
+                        auto cls = ALLOC_CLASS(name, superClass);
+                        auto classObject = AS_CLASS(cls);
+
+                        classObjects_.push_back(classObject);
+
+                        // Track for GC
+                        constantObject_.insert((Traceable *) classObject);
+
+                        // Put the class in constant pool
+                        co->addConstant(cls);
+
+                        // Register as global
+                        globals->define(name);
+                        // And pre-install to the globals
+                        globals->set(globals->getGlobalIndex(name), cls);
+
+                        // To compile class body we set the current
+                        // compiling class, so the defined methods are
+                        // stored in the class.
+                        if (exp.list.size() > 3) {
+                            auto prevClassObject = classObject_;
+                            classObject_ = classObject;
+
+                            // Body:
+                            scopeStack_.push(scopeInfo_.at(&exp));
+                            for (auto i = 3; i < exp.list.size(); i++) {
+                                gen(exp.list[i]);
+                            }
+                            scopeStack_.pop();
+                            classObject_ = prevClassObject;
+                        }
+
                     }
                         /* Function calls */
                     else {
@@ -438,7 +494,10 @@ public:
         auto prevCo = co;
 
         // Function code object
-        auto coValue = createCodeObjectValue(fnName, arity);
+        auto coValue = createCodeObjectValue(
+                classObject_ != nullptr ? (classObject_->name + "." + fnName) : fnName,
+                arity
+                );
         co = AS_CODE(coValue);
 
         // Put `free` and `cell` vars from the scope into the
@@ -468,8 +527,14 @@ public:
                 emit(cellIndex);
             }
         }
-
+        // Compile body in the new code object
+        //
+        // Note: reset the current class, so nested blocks
+        // and nested closures inside methods are handled.
+        auto prevClassObject_ = classObject_;
+        classObject_ = nullptr;
         gen(body);
+        classObject_ = prevClassObject_;
 
         if (!isBlock(body)) {
             emit(OP_SCOPE_EXIT);
@@ -479,10 +544,19 @@ public:
         // Explicit return to restore caller address
         emit(OP_RETURN);
 
+        // == Class methods ==
+        if (classObject_ != nullptr) {
+            auto fn = ALLOC_FUNCTION(co);
+            constantObject_.insert((Traceable*) AS_OBJECT(fn));
+
+            co = prevCo;
+
+            classObject_->properties[fnName] = fn;
+        }
         // 1. Simple functions (allocated at compile time).
         // If it's not a closure (doesn't have free variables) allocate it at compile time and store as a constant
         // Closure are allocated at runtime, but reuse the same code object
-        if (scopeInfo->free.size() == 0) {
+        else if (scopeInfo->free.size() == 0) {
             // Create the function
             auto fn = ALLOC_FUNCTION(co);
             constantObject_.insert((Traceable *) AS_OBJECT(fn));
@@ -541,6 +615,11 @@ public:
     std::set<Traceable *> &getConstantObjects() {
         return constantObject_;
     }
+
+    /**
+     * Currently compiling class object.
+     * */
+    ClassObject *classObject_;
 
 private:
 
@@ -611,7 +690,7 @@ private:
     /**
      * Whether the expression is a decalration.
      * */
-    bool isDeclaration(const Exp &exp) { return isVarDeclaration(exp) || isFunctionDeclaration(exp); }
+    bool isDeclaration(const Exp &exp) { return isVarDeclaration(exp) || isFunctionDeclaration(exp) || isClassDeclaration(exp); }
 
     /**
      * (var <name> <value>)
@@ -632,6 +711,13 @@ private:
      * */
     bool isFunctionDeclaration(const Exp &exp) {
         return isTaggedList(exp, "def");
+    }
+
+    /**
+     * (class <name> ...)
+     * */
+    bool isClassDeclaration(const Exp &exp) {
+        return isTaggedList(exp, "class");
     }
 
     /**
@@ -679,7 +765,7 @@ private:
      * */
     size_t stringConstIdx(const std::string &value) {
         ALLOC_CONST(IS_STRING, AS_CPPSTRING, ALLOC_STRING, value);
-        constantObject_.insert((Traceable*)co->constants.back().object);
+        constantObject_.insert((Traceable *) co->constants.back().object);
         return co->constants.size() - 1;
     }
 
@@ -713,6 +799,15 @@ private:
         writeByteAtOffset(offset + 1, value & 0xff);
     }
 
+    ClassObject *getClassByName(const std::string &name) {
+        for (const auto &classObject: classObjects_) {
+            if (classObject->name == name) {
+                return classObject;
+            }
+        }
+        return nullptr;
+    }
+
     /**
      * Scope info
      * */
@@ -742,6 +837,11 @@ private:
      * All objects from the constant pools of all code objects.
      * */
     std::set<Traceable *> constantObject_;
+
+    /**
+     * All class objects.
+     * */
+    std::vector<ClassObject *> classObjects_;
 
     /**
      * Compare ops map.

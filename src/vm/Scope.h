@@ -13,7 +13,8 @@
 enum class ScopeType {
     GLOBAL,
     FUNCTION,
-    BLOCK
+    BLOCK,
+    CLASS
 };
 
 /**

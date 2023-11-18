@@ -22,7 +22,8 @@ enum class ObjectType {
     CODE,
     NATIVE,
     FUNCTION,
-    CELL
+    CELL,
+    CLASS
 };
 
 /**
@@ -105,6 +106,39 @@ struct EvaValue {
         bool boolean;
         Object *object;
     };
+};
+
+/**
+ * Class object.
+ * */
+struct ClassObject : public Object {
+    std::string name;
+
+    std::map<std::string, EvaValue> properties;
+
+    ClassObject *superClass;
+
+    ClassObject(const std::string &name, ClassObject *superClass)
+                : Object(ObjectType::CLASS),
+                name(name),
+                properties{},
+                superClass(superClass) {}
+
+    EvaValue getProp(const std::string &prop) {
+        if (properties.count(prop) != 0) {
+            return properties[prop];
+        }
+
+        if (superClass == nullptr) {
+            DIE << "Unresolved property " << prop << " in class " << name;
+        }
+
+        return superClass->getProp(prop);
+    }
+
+    void setProp(const std::string &prop, const EvaValue &value) {
+        properties[prop] = value;
+    }
 };
 
 /**
@@ -253,6 +287,7 @@ struct FunctionObject : public Object {
 #define OBJECT(value) ((EvaValue){.type = EvaValueType::OBJECT, .object = (value)})
 
 #define CELL(cellObject) OBJECT((Object*)cellObject)
+#define CLASS(classObject) OBJECT((Object*)classObject)
 
 #define ALLOC_STRING(value) \
     ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new StringObject(value)})
@@ -264,6 +299,9 @@ struct FunctionObject : public Object {
     ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new FunctionObject(co)})
 #define ALLOC_CELL(evaValue) \
     ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new CellObject(evaValue)})
+#define ALLOC_CLASS(name, superClass) \
+    ((EvaValue){.type = EvaValueType::OBJECT, .object = (Object*)new ClassObject(name, superClass)})
+
 
 /* ------------------------------------- */
 // Accessor:
@@ -278,6 +316,7 @@ struct FunctionObject : public Object {
 #define AS_NATIVE(evaValue) ((NativeObject*)(evaValue).object)
 #define AS_FUNCTION(evaValue) ((FunctionObject*)(evaValue).object)
 #define AS_CELL(evaValue) ((CellObject*)(evaValue).object)
+#define AS_CLASS(evaValue) ((ClassObject*)(evaValue).object)
 
 /* ------------------------------------- */
 // Testers:
@@ -293,6 +332,7 @@ struct FunctionObject : public Object {
 #define IS_NATIVE(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::NATIVE)
 #define IS_FUNCTION(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::FUNCTION)
 #define IS_CELL(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::CELL)
+#define IS_CLASS(evaValue) IS_OBJECT_TYPE(evaValue, ObjectType::CLASS)
 
 /**
  * String representation used in constants for debug.
@@ -312,6 +352,8 @@ std::string evaValueToTypeString(const EvaValue &evaValue) {
         return "FUNCTION";
     } else if (IS_CELL(evaValue)) {
         return "CELL";
+    } else if (IS_CLASS(evaValue)) {
+        return "CLASS";
     } else {
         DIE << "evaValueToTypeString: unknown type " << (int) evaValue.type;
     }
@@ -338,6 +380,9 @@ std::string evaValueToConstantString(const EvaValue &evaValue) {
     } else if (IS_CELL(evaValue)) {
         auto cell = AS_CELL(evaValue);
         ss << "cell: " << evaValueToConstantString(cell->value);
+    } else if (IS_CLASS(evaValue)) {
+        auto classObj = AS_CLASS(evaValue);
+        ss << "classObj: " << classObj->name;
     } else if (IS_NATIVE(evaValue)) {
         auto fn = AS_NATIVE(evaValue);
         ss << fn->name << "/" << fn->arity;
