@@ -42,7 +42,8 @@ private:
             case OP_MUL:
             case OP_DIV:
             case OP_POP:
-            case OP_RETURN: {
+            case OP_RETURN:
+            case OP_NEW: {
                 return disassembleSimple(co, opcode, offset);
             }
             case OP_SCOPE_EXIT:
@@ -74,6 +75,10 @@ private:
             }
             case OP_MAKE_FUNCTION: {
                 return disassembleMakeFunction(co, opcode, offset);
+            }
+            case OP_GET_PROP:
+            case OP_SET_PROP: {
+                return disassembleProperty(co, opcode, offset);
             }
             default: {
                 DIE << "disassemblyInstruction: no disassembly for " << opcodeToString(opcode);
@@ -134,6 +139,17 @@ private:
         printOpCode(opcode);
         auto localIndex = co->code[offset + 1];
         std::cout << (int) localIndex << " (" << co->locals[localIndex].name << ")";
+        return offset + 2;
+    }
+
+    /**
+     * Disassemble property access.
+     * */
+    size_t disassembleProperty(CodeObject *co, uint8_t opcode, size_t offset) {
+        dumpBytes(co, offset, 2);
+        printOpCode(opcode);
+        auto constIndex = co->code[offset + 1];
+        std::cout << (int) constIndex << " (" << AS_CPPSTRING(co->constants[constIndex]) << ")";
         return offset + 2;
     }
 

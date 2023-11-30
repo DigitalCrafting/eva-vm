@@ -16,16 +16,23 @@ struct EvaCollector {
     std::set<Traceable *> getPointers(Traceable *object) {
         std::set<Traceable *> pointers;
 
-        auto evaValue = OBJECT((Object*)object);
+        auto evaValue = OBJECT((Object *) object);
 
         if (IS_FUNCTION(evaValue)) {
             auto fn = AS_FUNCTION(evaValue);
-            for (auto &cell : fn->cells) {
-                pointers.insert((Traceable*)cell);
+            for (auto &cell: fn->cells) {
+                pointers.insert((Traceable *) cell);
             }
         }
 
-        // TODO: OOP instances
+        if (IS_INSTANCE(evaValue)) {
+            auto instance = AS_INSTANCE(evaValue);
+            for (auto &prop: instance->properties) {
+                if (IS_OBJECT(prop.second)) {
+                    pointers.insert((Traceable *) AS_OBJECT(prop.second));
+                }
+            }
+        }
 
         return pointers;
     }
@@ -51,7 +58,7 @@ struct EvaCollector {
     void sweep() {
         auto it = Traceable::objects.begin();
         while (it != Traceable::objects.end()) {
-            auto object = (Traceable*)*it;
+            auto object = (Traceable *) *it;
             if (object->marked) {
                 // Alive object, reset the mark bit for future collection cycles
                 object->marked = false;

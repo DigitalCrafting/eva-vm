@@ -394,6 +394,41 @@ public:
                     callStack.pop();
                     break;
                 }
+                case OP_NEW: {
+                    auto classObject = AS_CLASS(pop());
+                    auto instance = MEM(ALLOC_INSTANCE, classObject);
+
+                    // Push the constructor:
+                    auto ctorValue = classObject->getProp("constructor");
+                    push(ctorValue);
+
+                    // And the instance:
+                    push(instance);
+
+                    // Note: the code for constructor parameters is
+                    // generated at compile time, followed by OP_CALL
+                    break;
+                }
+                case OP_GET_PROP: {
+                    auto prop = AS_CPPSTRING(GET_CONST());
+                    auto object = pop();
+
+                    if (IS_INSTANCE(object)) {
+                        push(AS_INSTANCE(object)->getProp(prop));
+                    } else if (IS_CLASS(object)) {
+                        push(AS_CLASS(object)->getProp(prop));
+                    } else {
+                        DIE << "[EvaVM]: Unknown object for OP_GET_PROP " << prop;
+                    }
+                    break;
+                }
+                case OP_SET_PROP: {
+                    auto prop = AS_CPPSTRING(GET_CONST());
+                    auto instance = AS_INSTANCE(pop());
+                    auto value = pop();
+                    push(instance->properties[prop] = value);
+                    break;
+                }
                 default:
                     DIE << "Unknown opcode: " << std::hex << opcode;
             }

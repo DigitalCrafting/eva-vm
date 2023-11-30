@@ -12,19 +12,20 @@ int main(int argc, const char *argv[]) {
 //        Traceable::printStats();
         auto result = vm.exec(R"(
             (class Point null
-                (def constructor (self x y)
-                    (begin
-                        //(set (prop self x) x)
-                        //(set (prop self y) y)
-                        self
-                    )
+              (def constructor (self x y)
+                (begin
+                  (set (prop self x) x)
+                  (set (prop self y) y)
                 )
-                (def calc (self)
-                    //(+ (prop self x) (prop self y))
-                    1
-                )
+              )
+
+              (def calc (self)
+                (+ (prop self x) (prop self y))
+              )
             )
-            Point
+
+            (var p (new Point 10 20))
+            ((prop p calc) p)
         )");
 
         log(result);

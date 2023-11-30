@@ -23,7 +23,7 @@
             }                                               \
         }                                                   \
         co->addConstant(allocator(value));          \
-    } while (false);
+    } while (false)
 
 
 // Generic binary operation: (+ 1 2) OP_CONST, OP_CONST, OP_ADD
@@ -152,6 +152,8 @@ public:
                     for (auto i = 3; i < exp.list.size(); i++) {
                         analyze(exp.list[i], scope);
                     }
+                } else if (op == "prop") {
+                    analyze(exp.list[1], scope);
                 } else {
                     for (auto i = 1; i < exp.list.size(); ++i) {
                         analyze(exp.list[i], scope);
@@ -342,29 +344,42 @@ public:
                             co->addLocal(varName);
                         }
                     } else if (op == "set") {
-                        auto varName = exp.list[1].string;
-                        auto opCodeSetter = scopeStack_.top()->getNameSetter(varName);
+                        if (isProp(exp.list[1])) {
+                            // Value:
+                            gen(exp.list[2]);
 
-                        gen(exp.list[2]);
+                            // Instance:
+                            gen(exp.list[1].list[1]);
 
-                        if (opCodeSetter == OP_SET_LOCAL) {
-                            // 1. Local vars
-                            emit(OP_SET_LOCAL);
-                            emit(co->getLocalIndex(varName));
-                        } else if (opCodeSetter == OP_SET_CELL) {
-                            // 2. Cell vars
-                            emit(OP_SET_CELL);
-                            emit(co->getCellIndex(varName));
+                            // Property name:
+                            emit(OP_SET_PROP);
+                            emit(stringConstIdx(exp.list[1].list[2].string));
+
                         } else {
-                            // 3. Global vars
-                            auto globalIndex = globals->getGlobalIndex(varName);
+                            auto varName = exp.list[1].string;
+                            auto opCodeSetter = scopeStack_.top()->getNameSetter(varName);
 
-                            if (globalIndex == -1) {
-                                DIE << "Reference error: " << varName << " is not defined.";
+                            gen(exp.list[2]);
+
+                            if (opCodeSetter == OP_SET_LOCAL) {
+                                // 1. Local vars
+                                emit(OP_SET_LOCAL);
+                                emit(co->getLocalIndex(varName));
+                            } else if (opCodeSetter == OP_SET_CELL) {
+                                // 2. Cell vars
+                                emit(OP_SET_CELL);
+                                emit(co->getCellIndex(varName));
+                            } else {
+                                // 3. Global vars
+                                auto globalIndex = globals->getGlobalIndex(varName);
+
+                                if (globalIndex == -1) {
+                                    DIE << "Reference error: " << varName << " is not defined.";
+                                }
+                                // Initializer:
+                                emit(OP_SET_GLOBAL);
+                                emit(globalIndex);
                             }
-                            // Initializer:
-                            emit(OP_SET_GLOBAL);
-                            emit(globalIndex);
                         }
                     } else if (op == "begin") {
                         scopeStack_.push(scopeInfo_.at(&exp));
@@ -468,6 +483,53 @@ public:
                             classObject_ = prevClassObject;
                         }
 
+                        // We update constructor to explicitly return
+                        // 'self' which is the argument at index 1.
+
+                        auto constrFun = AS_FUNCTION(classObject->getProp("constructor"));
+                        constrFun->co->insertAtOffset(-3, OP_POP);
+                        constrFun->co->insertAtOffset(-3, OP_GET_LOCAL);
+                        constrFun->co->insertAtOffset(-3, 1);
+                    }
+                        /* New operator
+                         *
+                         * (new <class> <args>)
+                         * */
+                    else if (op == "new") {
+                        auto className = exp.list[1].string;
+                        auto cls = getClassByName(className);
+
+                        if (cls == nullptr) {
+                            DIE << "[EvaCompiler]: Unknown class: " << className;
+                        }
+
+                        // Get class:
+                        emit(OP_GET_GLOBAL);
+                        emit(globals->getGlobalIndex(className));
+
+                        // New instance:
+                        emit(OP_NEW);
+
+                        // Note: After the OP_NEW, the constructor function
+                        // and the created instance are on top of the stack.
+
+                        // Other arguments are pushed after 'self':
+                        for (auto i = 2; i < exp.list.size(); i++) {
+                            gen(exp.list[i]);
+                        }
+
+                        // Call the constructor
+                        emit(OP_CALL);
+                        emit(AS_FUNCTION(cls->getProp("constructor"))->co->arity);
+                    }
+                        /* Prop access */
+                    else if (op == "prop") {
+                        // Instance:
+                        gen(exp.list[1]);
+
+                        // Property name:
+                        emit(OP_GET_PROP);
+                        emit(stringConstIdx(exp.list[2].string));
                     }
                         /* Function calls */
                     else {
@@ -497,7 +559,7 @@ public:
         auto coValue = createCodeObjectValue(
                 classObject_ != nullptr ? (classObject_->name + "." + fnName) : fnName,
                 arity
-                );
+        );
         co = AS_CODE(coValue);
 
         // Put `free` and `cell` vars from the scope into the
@@ -516,7 +578,7 @@ public:
 
         // Parameters are added as variables
         for (auto i = 0; i < arity; i++) {
-            auto &argName = params[i].string;
+            auto argName = params[i].string;
             co->addLocal(argName);
 
             // Note: if the param is captured by the cell, emit the code for it.
@@ -547,15 +609,15 @@ public:
         // == Class methods ==
         if (classObject_ != nullptr) {
             auto fn = ALLOC_FUNCTION(co);
-            constantObject_.insert((Traceable*) AS_OBJECT(fn));
+            constantObject_.insert((Traceable *) AS_OBJECT(fn));
 
             co = prevCo;
 
             classObject_->properties[fnName] = fn;
         }
-        // 1. Simple functions (allocated at compile time).
-        // If it's not a closure (doesn't have free variables) allocate it at compile time and store as a constant
-        // Closure are allocated at runtime, but reuse the same code object
+            // 1. Simple functions (allocated at compile time).
+            // If it's not a closure (doesn't have free variables) allocate it at compile time and store as a constant
+            // Closure are allocated at runtime, but reuse the same code object
         else if (scopeInfo->free.size() == 0) {
             // Create the function
             auto fn = ALLOC_FUNCTION(co);
@@ -688,9 +750,18 @@ private:
     }
 
     /**
-     * Whether the expression is a decalration.
+     * Whether the expression is a declaration.
      * */
-    bool isDeclaration(const Exp &exp) { return isVarDeclaration(exp) || isFunctionDeclaration(exp) || isClassDeclaration(exp); }
+    bool isDeclaration(const Exp &exp) {
+        return isVarDeclaration(exp) || isFunctionDeclaration(exp) || isClassDeclaration(exp);
+    }
+
+    /**
+     * Whether the expression is a prop.
+     * */
+    bool isProp(const Exp &exp) {
+        return isTaggedList(exp, "prop");
+    }
 
     /**
      * (var <name> <value>)
@@ -853,8 +924,8 @@ private:
  * Compare ops map.
  * */
 std::map<std::string, uint8_t> EvaCompiler::compareOps_ = {
-        {"<",  0},
-        {">",  1},
+        {"<", 0},
+        {">", 1},
         {"==", 2},
         {">=", 3},
         {"<=", 4},
