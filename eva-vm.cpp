@@ -1,51 +1,60 @@
 #include <iostream>
+#include <fstream>
 
 #include "./src/vm/Logger.h"
 #include "./src/vm/EvaVM.h"
+
+void printHelp() {
+    std::cout << "\nUsage: eva-vm [options]\n\n"
+              << "Options:\n"
+              << "    -e, --expression  Expression to parse\n"
+              << "    -f, --file        File to parse\n\n";
+}
 
 /**
  * Eva VM main executable
  * */
 int main(int argc, const char *argv[]) {
-    {
-        EvaVM vm;
-//        Traceable::printStats();
-        auto result = vm.exec(R"(
-            (class Point null
-              (def constructor (self x y)
-                (begin
-                  (set (prop self x) x)
-                  (set (prop self y) y)
-                )
-              )
-
-              (def calc (self)
-                (+ (prop self x) (prop self y))
-              )
-            )
-
-            (class Point3D Point
-              (def constructor (self x y z)
-                (begin
-                  ((prop (super Point3D) constructor) self x y)
-                  (set (prop self z) z)))
-
-              (def calc (self)
-                (+ ((prop (super Point3D) calc) self) (prop self z)))
-            )
-
-            (var p (new Point3D 10 20 30))
-            ((prop p calc) p)
-        )");
-
-        log(result);
-
-//        Traceable::printStats();
-//      vm.dumpStack();
+    if (argc != 3) {
+        printHelp();
+        return 0;
     }
 
-//    Traceable::printStats();
+    /**
+   * Expression mode.
+   */
+    std::string mode = argv[1];
 
-    std::cout << "All done!\n";
+    /**
+     * Program to execute.
+     */
+    std::string program;
+
+    /**
+     * Simple expression.
+     */
+    if (mode == "-e") {
+        program = argv[2];
+    } else if (mode == "-f") {
+        // Read the file:
+        std::ifstream programFile(argv[2]);
+        std::stringstream buffer;
+        buffer << programFile.rdbuf() << "\n";
+
+        // Program:
+        program = buffer.str();
+    }
+
+    EvaVM vm;
+//  Traceable::printStats();
+    auto result = vm.exec(program);
+
+    std::cout << "\n";
+    log(result);
+    std::cout << "\n";
+
+//  Traceable::printStats();
+//  vm.dumpStack();
+
     return 0;
 }
