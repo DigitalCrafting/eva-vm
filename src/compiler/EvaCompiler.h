@@ -531,6 +531,22 @@ public:
                         emit(OP_GET_PROP);
                         emit(stringConstIdx(exp.list[2].string));
                     }
+                        /* Super operator */
+                    else if (op == "super") {
+                        auto className = exp.list[1].string;
+                        auto cls = getClassByName(className);
+
+                        if (cls == nullptr) {
+                            DIE << "[EvaCompiler]: Unknown class " << cls;
+                        }
+
+                        if (cls->superClass == nullptr) {
+                            DIE << "[EvaCompiler]: Class " << cls->name << "doesn't have super class";
+                        }
+
+                        emit(OP_GET_GLOBAL);
+                        emit(globals->getGlobalIndex(cls->superClass->name));
+                    }
                         /* Function calls */
                     else {
                         FUNCTION_CALL(exp);
@@ -924,8 +940,8 @@ private:
  * Compare ops map.
  * */
 std::map<std::string, uint8_t> EvaCompiler::compareOps_ = {
-        {"<", 0},
-        {">", 1},
+        {"<",  0},
+        {">",  1},
         {"==", 2},
         {">=", 3},
         {"<=", 4},
